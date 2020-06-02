@@ -4,4 +4,4 @@ Sheetah is part of the OpenPlasma project. It has been designed to work on top o
 
 [Documentation here](https://openplasma.readthedocs.io) (work in progress...)
 
-![alt text](images/sheetah.jpg)
+![alt text](doc/images/sheetah.jpg)

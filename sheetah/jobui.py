@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 from PyQt5 import QtCore, QtGui, QtWidgets
 from workspaceview import WorkspaceViewWidget, JobVisual
-mm = None
-class jobParamDialog(QtWidgets.QDialog):
+
+class JobParamDialog(QtWidgets.QDialog):
     def __init__(self, job, parent=None):
         super().__init__(parent)
         self.job = job
@@ -75,9 +75,9 @@ class jobParamDialog(QtWidgets.QDialog):
         super().accept()
 
 class JobItemWidget(QtGui.QGroupBox):
-    def __init__(self, jobcollection, job):
+    def __init__(self, job_manager, job):
         super().__init__()
-        self.jobcollection = jobcollection
+        self.job_manager = job_manager
         self.job = job
 
         self.name_label = QtGui.QLabel(job.name, alignment=QtCore.Qt.AlignCenter)
@@ -90,7 +90,7 @@ class JobItemWidget(QtGui.QGroupBox):
         self.param_btn = QtGui.QPushButton()
         self.param_btn.setIcon(QtGui.QIcon.fromTheme('applications-system'))
 
-        self.params_dialog = jobParamDialog(self.job, self)
+        self.params_dialog = JobParamDialog(self.job, self)
 
         layout = QtGui.QGridLayout()
         layout.addWidget(self.name_label, 0, 0, 1, 2)
@@ -124,7 +124,7 @@ class JobItemWidget(QtGui.QGroupBox):
         self.params_dialog.exec_()
 
     def on_delete(self):
-        self.jobcollection.removeJob(self.job)
+        self.job_manager.remove_job(self.job)
 
     def on_kerf(self):
         self.job.kerf_width = self.kerf_width_spbox.value()
@@ -154,9 +154,9 @@ class JobListWidget(QtGui.QListWidget):
         self.takeItem(row)
 
 class JobGUI():
-    def __init__(self, jobcollection):
+    def __init__(self, job_manager):
         super().__init__()
-        self.jobcollection = jobcollection
+        self.job_manager = job_manager
         self.jobs = [[], [], []]
 
         self.graphic_w = WorkspaceViewWidget()
@@ -164,35 +164,32 @@ class JobGUI():
         self.sidebar_w = QtGui.QWidget()
         self.list_w = JobListWidget()
         self.load_btn = QtGui.QPushButton('load')
-        self.run_btn = QtGui.QPushButton('run')
 
         layout = QtGui.QVBoxLayout()
         layout.addWidget(self.list_w)
         layout.addWidget(self.load_btn)
-        layout.addWidget(self.run_btn)
         self.sidebar_w.setLayout(layout)
 
         self.load_btn.clicked.connect(self.on_load)
-        self.run_btn.clicked.connect(self.on_run)
-        self.jobcollection.update.connect(self.on_job_list_update)
+        self.job_manager.update.connect(self.on_job_list_update)
 
     def on_load(self):
         filename, _ = QtGui.QFileDialog.getOpenFileName(self.sidebar_w,
                       'Open File', QtCore.QDir.currentPath(),
                       'DXF (*.dxf);; All Files (*)')
         if filename:
-            self.jobcollection.loadJob(filename)
+            self.job_manager.load_job(filename)
 
     def on_job_list_update(self):
         for idx, job in enumerate(self.jobs[0]):
-            if job not in self.jobcollection.job_list:
+            if job not in self.job_manager.job_list:
                 self.list_w.remove(self.jobs[1][idx])
                 self.graphic_w.remove_job_visual(self.jobs[2][idx])
                 for l in self.jobs:
                     l.pop(idx)
-        for job in self.jobcollection.job_list:
+        for job in self.job_manager.job_list:
             if job not in self.jobs[0]:
-                jobitem = JobItemWidget(self.jobcollection, job)
+                jobitem = JobItemWidget(self.job_manager, job)
                 jobvisual = JobVisual(job)
 
                 self.jobs[0].append(job)
@@ -201,6 +198,3 @@ class JobGUI():
 
                 self.list_w.append(jobitem)
                 self.graphic_w.add_job_visual(jobvisual)
-
-    def on_run(self):
-        self.jobcollection.play()

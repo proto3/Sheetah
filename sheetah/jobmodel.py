@@ -158,8 +158,17 @@ class JobModel(QtCore.QObject):
             raise Exception('Unknown state ' + str(state) + '.')
         self.cut_state[index] = state
         self.state_update.emit()
+    def state_index(self, state):
+        """Return index of the first cut matching state, -1 otherwise."""
+        if state not in self._states:
+            raise Exception('Unknown state ' + str(state) + '.')
+        try:
+            index = self.cut_state.index(state)
+        except:
+            index = -1
+        return index
     def state_indices(self, state):
-        """Return indices of cuts that match state."""
+        """Return indices of cuts matching state."""
         if state not in self._states:
             raise Exception('Unknown state ' + str(state) + '.')
         return [i for i, s in enumerate(self.cut_state) if s==state]
@@ -172,27 +181,27 @@ class JobModel(QtCore.QObject):
             self._affine_transform()
         rel_bounds = np.array(self.cut_shape.bounds)
         return rel_bounds[2:] - rel_bounds[:2]
-    def get_cut_gcode(self, index, dryrun=False):
-        cut_path = self.get_cut_array(index)
-        gcode = list()
-        gcode += ['G90',
-                  'G1 Z20']
-        gcode += ['G1 F6000 X' + '{:.3f}'.format(cut_path[0][0]) + ' Y' + '{:.3f}'.format(cut_path[1][0]),
-                  'PROBE',
-                  'G91',
-                  'G1 Z3.8',
-                  'M3',
-                  'G4 P' + str(self._pierce_delay),
-                  'G1 Z-2.3',
-                  'G90',
-                  'M6 V' + '{:.2f}'.format(self._arc_voltage),
-                  'G1 F' + str(self._feedrate)]
-        for x,y in cut_path.transpose()[1:]:
-            gcode += ['G1 X' + '{:.3f}'.format(x) + ' Y' + '{:.3f}'.format(y)]
-        gcode += ['M7',
-                  'M5',
-                  'M8']
-        return gcode
+    # def get_cut_gcode(self, index, dryrun=False):
+    #     cut_path = self.get_cut_array(index)
+    #     gcode = list()
+    #     gcode += ['G90',
+    #               'G1 Z20']
+    #     gcode += ['G1 F6000 X' + '{:.3f}'.format(cut_path[0][0]) + ' Y' + '{:.3f}'.format(cut_path[1][0]),
+    #               'PROBE',
+    #               'G91',
+    #               'G1 Z3.8',
+    #               'M3',
+    #               'G4 P' + str(self._pierce_delay),
+    #               'G1 Z-2.3',
+    #               'G90',
+    #               'M6 V' + '{:.2f}'.format(self._arc_voltage),
+    #               'G1 F' + str(self._feedrate)]
+    #     for x,y in cut_path.transpose()[1:]:
+    #         gcode += ['G1 X' + '{:.3f}'.format(x) + ' Y' + '{:.3f}'.format(y)]
+    #     gcode += ['M7',
+    #               'M5',
+    #               'M8']
+    #     return gcode
     def get_cut_count(self):
         return self.cut_count
     def get_part_array(self, index):
@@ -239,18 +248,17 @@ class JobModel(QtCore.QObject):
             self.cut_arrays.append(np.array(ring.coords.xy))
         self.need_affine_transform = False
 
-class JobModelCollection(QtCore.QThread):
+class JobManager(QtCore.QThread):
     update = QtCore.pyqtSignal()
 
-    def __init__(self, serialmanager):
+    def __init__(self):
         super().__init__()
-        self._sm = serialmanager
         self.job_list = list()
 
         self.busy = False
         self.pause_required = False
 
-    def loadJob(self, filename):
+    def load_job(self, filename):
         path = pathlib.Path(filename)
         name = path.stem.capitalize()
 
@@ -273,48 +281,54 @@ class JobModelCollection(QtCore.QThread):
             self.job_list.append(JobModel(name, index, polygons[0]))
         self.update.emit()
 
-    def removeJob(self, job):
+    def remove_job(self, job):
         if not self.busy:
             self.job_list.remove(job)
             self.update.emit()
 
-    def job_todo(self):
-        for job in self.job_list:
-            if job.has_cut_todo():
-                return True
-        return False
+    def pending_jobs(self):
+        return [job for job in self.job_list if job.state_index(JobModel.TODO) >= 0]
 
-    def run(self):
-        # THREAD
-        self.job_list.sort()
-        for job in self.job_list:
-            if self.pause_required:
-                #TODO do the pause
-                pass
-            cut_ids = job.state_indices(JobModel.TODO)
-            for index in cut_ids:
-                job.activate()
-                contour = job.get_cut_gcode(index)
-                job.set_state(index, JobModel.RUNNING)
-                if self._sm.send_job(contour): #blocking
-                    job.set_state(index, JobModel.DONE)
-                else:
-                    # TODO handle user decision to skip or retry
-                    job.set_state(index, JobModel.FAILED)
-        self.busy = False
+    # def job_todo(self):
+    #     for job in self.job_list:
+    #         if job.has_cut_todo():
+    #             return True
+    #     return False
+    #
+    # def run(self):
+    #     # THREAD
+    #
+    #     # reorder jobs according to their index
+    #     self.job_list.sort()
+    #
+    #     for job in self.job_list:
+    #         if self.pause_required:
+    #             #TODO do the pause
+    #             pass
+    #         cut_ids = job.state_indices(JobModel.TODO)
+    #         for index in cut_ids:
+    #             job.activate()
+    #             contour = job.get_cut_gcode(index)
+    #             job.set_state(index, JobModel.RUNNING)
+    #             if self._sm.send_job(contour): #blocking
+    #                 job.set_state(index, JobModel.DONE)
+    #             else:
+    #                 # TODO handle user decision to skip or retry
+    #                 job.set_state(index, JobModel.FAILED)
+    #     self.busy = False
+    #
+    # def play(self):
+    #     self.job_list.sort()
+    #     self.busy = True
+    #     self.pause_required = False
+    #     self.start()
+    #
+    # def stop(self):
+    #     self.pause()
+    #     self._sm.abort_job()
+    #
+    # def pause(self):
+    #     self.pause_required = True
 
-    def play(self):
-        self.job_list.sort()
-        self.busy = True
-        self.pause_required = False
-        self.start()
-
-    def stop(self):
-        self.pause()
-        self._sm.abort_job()
-
-    def pause(self):
-        self.pause_required = True
-
-    def __iter__(self):
-        return iter(self.job_list)
+    # def __iter__(self):
+    #     return iter(self.job_list)
