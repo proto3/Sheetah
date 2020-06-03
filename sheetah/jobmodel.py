@@ -8,6 +8,44 @@ from dxfloader import DXFLoader
 from shapely import affinity
 import shapely
 
+class Task():
+    def __init__(self, cmd_list):
+        self.cmd_list = cmd_list
+        self.cmd_index = 0
+
+    def __str__(self):
+        return str(self.cmd_list)
+
+    def pop(self):
+        cmd = self.cmd_list[self.cmd_index]
+        self.cmd_index += 1
+        return cmd
+
+    def close(self):
+        self.cmd_list = []
+
+class JobTask(Task):
+    def __init__(self, cmd_list, job, id, fail_point=0):
+        super().__init__(cmd_list)
+        self.job = job
+        self.id = id
+        self.fail_point = fail_point
+
+    def pop(self):
+        if self.cmd_index == 0:
+            self.job.set_state(self.id, JobModel.RUNNING)
+        return super().pop()
+
+    def close(self):
+        if self.cmd_index >= len(self.cmd_list):
+            self.job.set_state(self.id, JobModel.DONE)
+        else:
+            if self.cmd_index > self.fail_point:
+                self.job.set_state(self.id, JobModel.FAILED)
+            else:
+                self.job.set_state(self.id, JobModel.TODO)
+        super().close()
+
 @dataclass(order=True)
 class JobModel(QtCore.QObject):
     index: int # first parameter used for job sorting #TODO only use this one
@@ -20,20 +58,18 @@ class JobModel(QtCore.QObject):
     RUNNING = 1
     DONE    = 2
     FAILED  = 3
-    SKIPPED = 4
-    DRYRUN  = 5
-    _states = (TODO, RUNNING, DONE, FAILED, SKIPPED, DRYRUN)
+    IGNORED = 4
+    _states = (TODO, RUNNING, DONE, FAILED, IGNORED)
 
     def __init__(self, name, index, polygon):
         super().__init__()
         self._name = name
         self._index = index
-        self._activated = False
 
         #TODO use default params handler to fill these attr
         self._arc_voltage = 110.0
         self._exterior_clockwise = False
-        self._feedrate = 2000
+        self._feedrate = 10000
         self._kerf_width = 2.0
         self._pierce_delay = 500
         self._position = np.array([10.,10.])
@@ -73,10 +109,9 @@ class JobModel(QtCore.QObject):
         return self._position
     @position.setter
     def position(self, p):
-        if not self._activated:
-            self._position = np.array(p)
-            self.need_affine_transform = True
-            self.shape_update.emit()
+        self._position = np.array(p)
+        self.need_affine_transform = True
+        self.shape_update.emit()
 
     @property
     def angle(self):
@@ -84,80 +119,67 @@ class JobModel(QtCore.QObject):
     @angle.setter
     def angle(self, a):
         """Set job angle in degrees."""
-        if not self._activated:
-            self._angle = a
-            self.need_affine_transform = True
-            self.shape_update.emit()
+        self._angle = a
+        self.need_affine_transform = True
+        self.shape_update.emit()
 
     @property
     def exterior_clockwise(self):
         return self._exterior_clockwise
     @exterior_clockwise.setter
     def exterior_clockwise(self, e):
-        if not self._activated:
-            self._exterior_clockwise = e
-            self.need_contour_transform = True
-            self.shape_update.emit()
-            self.param_update.emit()
+        self._exterior_clockwise = e
+        self.need_contour_transform = True
+        self.shape_update.emit()
+        self.param_update.emit()
 
     @property
     def kerf_width(self):
         return self._kerf_width
     @kerf_width.setter
     def kerf_width(self, k):
-        if not self._activated:
-            self._kerf_width = k
-            self.need_contour_transform = True
-            self.shape_update.emit()
-            self.param_update.emit()
+        self._kerf_width = k
+        self.need_contour_transform = True
+        self.shape_update.emit()
+        self.param_update.emit()
 
     @property
     def arc_voltage(self):
         return self._arc_voltage
     @arc_voltage.setter
     def arc_voltage(self, v):
-        if not self._activated:
-            self._arc_voltage = v
-            self.param_update.emit()
+        self._arc_voltage = v
+        self.param_update.emit()
 
     @property
     def feedrate(self):
         return self._feedrate
     @feedrate.setter
     def feedrate(self, f):
-        if not self._activated:
-            self._feedrate = f
-            self.param_update.emit()
+        self._feedrate = f
+        self.param_update.emit()
 
     @property
     def pierce_delay(self):
         return self._pierce_delay
     @pierce_delay.setter
     def pierce_delay(self, d):
-        if not self._activated:
-            self._pierce_delay = d
-            self.param_update.emit()
+        self._pierce_delay = d
+        self.param_update.emit()
 
     def set_lead_pos(self, index, pos):
-        if not self._activated:
-            self.lead_pos[index] = pos
-            self.shape_update.emit()
+        self.lead_pos[index] = pos
+        self.shape_update.emit()
 
-    def activate(self):
-        """Definitely freeze all job parameters to avoid modifications during
-        cut.
-        """
-        if not self._activated:
-            self._activated = True
-            self.state_update.emit()
+    def get_state(self, index):
+        return self.cut_state[index]
     def set_state(self, index, state):
         """Set state of a particular cut."""
-        if not self._activated:
-            raise Exception('Updating state before activation is forbidden.')
         if state not in self._states:
             raise Exception('Unknown state ' + str(state) + '.')
         self.cut_state[index] = state
         self.state_update.emit()
+        self.shape_update.emit()
     def state_index(self, state):
         """Return index of the first cut matching state, -1 otherwise."""
         if state not in self._states:
@@ -181,27 +203,6 @@ class JobModel(QtCore.QObject):
             self._affine_transform()
         rel_bounds = np.array(self.cut_shape.bounds)
         return rel_bounds[2:] - rel_bounds[:2]
-    # def get_cut_gcode(self, index, dryrun=False):
-    #     cut_path = self.get_cut_array(index)
-    #     gcode = list()
-    #     gcode += ['G90',
-    #               'G1 Z20']
-    #     gcode += ['G1 F6000 X' + '{:.3f}'.format(cut_path[0][0]) + ' Y' + '{:.3f}'.format(cut_path[1][0]),
-    #               'PROBE',
-    #               'G91',
-    #               'G1 Z3.8',
-    #               'M3',
-    #               'G4 P' + str(self._pierce_delay),
-    #               'G1 Z-2.3',
-    #               'G90',
-    #               'M6 V' + '{:.2f}'.format(self._arc_voltage),
-    #               'G1 F' + str(self._feedrate)]
-    #     for x,y in cut_path.transpose()[1:]:
-    #         gcode += ['G1 X' + '{:.3f}'.format(x) + ' Y' + '{:.3f}'.format(y)]
-    #     gcode += ['M7',
-    #               'M5',
-    #               'M8']
-    #     return gcode
     def get_cut_count(self):
         return self.cut_count
     def get_part_array(self, index):
@@ -286,49 +287,11 @@ class JobManager(QtCore.QThread):
             self.job_list.remove(job)
             self.update.emit()
 
-    def pending_jobs(self):
-        return [job for job in self.job_list if job.state_index(JobModel.TODO) >= 0]
-
-    # def job_todo(self):
-    #     for job in self.job_list:
-    #         if job.has_cut_todo():
-    #             return True
-    #     return False
-    #
-    # def run(self):
-    #     # THREAD
-    #
-    #     # reorder jobs according to their index
-    #     self.job_list.sort()
-    #
-    #     for job in self.job_list:
-    #         if self.pause_required:
-    #             #TODO do the pause
-    #             pass
-    #         cut_ids = job.state_indices(JobModel.TODO)
-    #         for index in cut_ids:
-    #             job.activate()
-    #             contour = job.get_cut_gcode(index)
-    #             job.set_state(index, JobModel.RUNNING)
-    #             if self._sm.send_job(contour): #blocking
-    #                 job.set_state(index, JobModel.DONE)
-    #             else:
-    #                 # TODO handle user decision to skip or retry
-    #                 job.set_state(index, JobModel.FAILED)
-    #     self.busy = False
-    #
-    # def play(self):
-    #     self.job_list.sort()
-    #     self.busy = True
-    #     self.pause_required = False
-    #     self.start()
-    #
-    # def stop(self):
-    #     self.pause()
-    #     self._sm.abort_job()
-    #
-    # def pause(self):
-    #     self.pause_required = True
-
-    # def __iter__(self):
-    #     return iter(self.job_list)
+    def generate_tasks(self, post_processor):
+        tasks = []
+        for job in self.job_list:
+            for i in job.state_indices(JobModel.TODO):
+                tasks.append(post_processor.generate(job, i))
+        if tasks:
+            tasks.insert(0, post_processor.init_task())
+        return tasks

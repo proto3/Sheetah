@@ -10,10 +10,14 @@ from shapely.geometry import Point
 class JobVisual:
     def __init__(self, job):
         self.job = job
-        # self.ext_curve = pg.PlotCurveItem([], [], fillLevel=0, pen=pg.mkPen(color=(150, 210, 50), width=2), brush=pg.mkBrush(color=(110, 230, 20, 80)))
-        self.ext_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(4, 150, 255), width=2))
-        self.int_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(150, 210, 50), width=2))
-        # TODO maxbounds from machine size
+        # self.part_curve = pg.PlotCurveItem([], [], fillLevel=0, pen=pg.mkPen(color=(150, 210, 50), width=2), brush=pg.mkBrush(color=(110, 230, 20, 80)))
+        self.part_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(4, 150, 255), width=2))
+
+        self.todo_curve    = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(255, 255, 255), width=2))
+        self.running_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(250, 170,   0), width=2))
+        self.done_curve    = pg.PlotCurveItem([], [], pen=pg.mkPen(color=( 65, 220,  10), width=2))
+        self.failed_curve  = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(255,   0,   0), width=2))
+        self.ignored_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(100, 100, 100), width=2))
 
         pos = self.job.position
         size = self.job.get_size()
@@ -38,17 +42,23 @@ class JobVisual:
             connected[-1] = False
             connect = np.concatenate((connect, connected))
             data = np.concatenate((data, c), axis=1)
-        self.ext_curve.setData(data[0], data[1], connect=connect)
+        self.part_curve.setData(data[0], data[1], connect=connect)
 
-        connect = np.empty(0, dtype=np.bool)
-        data = np.empty((2,0), dtype=np.float)
+        connect = [np.empty(0, dtype=np.bool) for i in range(5)]
+        data = [np.empty((2,0), dtype=np.float) for i in range(5)]
         for i in range(self.job.get_cut_count()):
-            c = self.job.get_cut_array(i)
-            connected = np.repeat(True, c.shape[1])
+            cut = self.job.get_cut_array(i)
+            state = self.job.get_state(i)
+            connected = np.repeat(True, cut.shape[1])
             connected[-1] = False
-            connect = np.concatenate((connect, connected))
-            data = np.concatenate((data, c), axis=1)
-        self.int_curve.setData(data[0], data[1], connect=connect)
+            connect[state] = np.concatenate((connect[state], connected))
+            data[state] = np.concatenate((data[state], cut), axis=1)
+
+        self.todo_curve.setData(data[0][0], data[0][1], connect=connect[0])
+        self.running_curve.setData(data[1][0], data[1][1], connect=connect[1])
+        self.done_curve.setData(data[2][0], data[2][1], connect=connect[2])
+        self.failed_curve.setData(data[3][0], data[3][1], connect=connect[3])
+        self.ignored_curve.setData(data[4][0], data[4][1], connect=connect[4])
 
     def on_roi_update(self):
         self.job.angle = self.roi.angle()
@@ -114,11 +124,19 @@ class WorkspaceViewWidget(pg.PlotWidget): #GraphicsView
         self.bg_image.setImage(self.video_thread.frame, autoLevels=False)
 
     def add_job_visual(self, visual):
-        self.addItem(visual.int_curve)
-        self.addItem(visual.ext_curve)
+        self.addItem(visual.todo_curve)
+        self.addItem(visual.running_curve)
+        self.addItem(visual.done_curve)
+        self.addItem(visual.failed_curve)
+        self.addItem(visual.ignored_curve)
+        self.addItem(visual.part_curve)
         self.addItem(visual.roi)
 
     def remove_job_visual(self, visual):
-        self.removeItem(visual.int_curve)
-        self.removeItem(visual.ext_curve)
+        self.removeItem(visual.todo_curve)
+        self.removeItem(visual.running_curve)
+        self.removeItem(visual.done_curve)
+        self.removeItem(visual.failed_curve)
+        self.removeItem(visual.ignored_curve)
+        self.removeItem(visual.part_curve)
         self.removeItem(visual.roi)

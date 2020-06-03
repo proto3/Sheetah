@@ -1,121 +1,80 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from PyQt5 import QtCore
+from PyQt5 import QtCore, QtWidgets
+import pyqtgraph as pg
 import numpy as np
-import serial, queue
-import regex as re
+import serial
+from controllerbase import ControllerBase, ControllerUIBase
 
-from controllerinterface import ControllerInterface
-from jobmodel import JobModel
+import queue
 
-class GenericThread(QtCore.QThread):
-    def __init__(self, function, *args, **kwargs):
-        super().__init__()
-        self.function = function
-        self.args = args
-        self.kwargs = kwargs
-
-    def run(self, *args):
-        self.function(*self.args, **self.kwargs)
-
-class QLogger(QtCore.QObject):
-    log_available = QtCore.pyqtSignal()
+class QTHCLogger(QtCore.QObject):
     thc_update = QtCore.pyqtSignal()
     def __init__(self):
         super().__init__()
-        self.queue = queue.Queue()
         self.thc_data = np.zeros(1000)
-    def log_received_data(self, text):
-        self.queue.put((text, True))
-        self.log_available.emit()
-    def log_sent_data(self, text):
-        self.queue.put((text, False))
-        self.log_available.emit()
-    def empty(self):
-        return self.queue.empty()
-    def get(self):
-        return self.queue.get()
     def log_thc_data(self, val):
         self.thc_data[:-1] = self.thc_data[1:]
         self.thc_data[-1] = val
         self.thc_update.emit()
 
-class KlipperController(ControllerInterface):
+class KlipperController(ControllerBase):
     def __init__(self, job_manager, post_processor):
-        self.job_manager = job_manager
-        self.post_processor = post_processor
-
+        super().__init__(job_manager, post_processor)
         self.serial = serial.Serial()
-        self.keep_threads = False
-        self.cmd_delimiter = '\n'
-        self.input_buffer = ''
         self.klipper_busy = False
+        self.thc_logger = QTHCLogger()
+        self.internal_cmd_queue = queue.Queue()
+        self.cut_running = False
 
-        self.input_thread = GenericThread(self._input_worker)
-        self.output_thread = GenericThread(self._output_worker)
-        self.mutex = QtCore.QMutex()
-        self.send_cond = QtCore.QWaitCondition()
+        # self.gcode_state_holder.append_node('M3', self.plasma_on)
+        # self.gcode_state_holder.append_node('M5', (def _: self.plasma = False))
 
-        self.state = 'disconnected'
-        self.job_list = list()
-        self.current_job = None
-        self.current_task = -1
-        self.cmd_list = list()
-        self.manual_cmd_queue = queue.Queue()
+        self.input_parser.append_node('ok', self._process_ok)
+        self.input_parser.append_node('!!', self._process_error)
+        self.input_parser.append_node('// echo: THC_error', self._process_thc)
+        self.input_parser.append_node('!! Arc transfer timeout', self._process_arc_transfer_timeout)
+        self.input_parser.append_node('!! Arc transfer loss', self._process_arc_loss)
 
-        self.logger = QLogger()
+    def _process_ok(self, input):
+        self.klipper_busy = False
+        self.send_cond.wakeOne()
 
-    def __del__(self):
-        self.disconnect()
+    def _process_error(self, input):
+        if self.active:
+            self.abort()
+            self.com_logger.incident.emit()
 
-    def start(self):
-        if self.state == 'connected':
-            # TODO lock job_manager state
+    def _process_thc(self, input):
+        words = input.split()
+        # v1 = float(words[3])
+        v2 = float(words[4])
+        self.thc_logger.log_thc_data(v2)
 
-            self.job_list = self.job_manager.pending_jobs()
-            if not self.job_list:
-                return
+    def _process_arc_transfer_timeout(self, input):
+        if self.active:
+            self.abort()
+            self.com_logger.incident.emit()
 
-            self.current_job = self.job_list.pop(0)
-            self.current_job.activate()
-            self.cmd_list = self.post_processor.start_sequence()
-            self.klipper_busy = False
-            self.state = 'running'
-            self.send_cond.wakeOne()
-
-    def stop(self):
-        if self.state != 'disconnected':
-            self.state = 'connected'
-            self.job_list = list()
-            self.current_job = None # TODO set state fail?
-            self.current_task = -1
-            self.cmd_list = list()
-            # TODO unlock job_manager state
-
-    def pause(self):
-        if self.state == 'running':
-            self.state = 'paused'
-
-    def resume(self):
-        if self.state == 'paused':
-            self.state = 'running'
-            self.send_cond.wakeOne()
+    def _process_arc_loss(self, input):
+        if self.active:
+            self.abort()
+            self.com_logger.incident.emit()
 
     def connect(self, port):
-        # if not self.serial.is_open:
-        if self.state == 'disconnected':
+        if not self.connected:
             try:
                 self.serial = serial.Serial(port, timeout=0.2)
             except:
                 raise Exception('Cannot open port ' + port)
+            self.connected = True
             self.keep_threads = True
+            self.klipper_busy = False
             self.input_thread.start()
             self.output_thread.start()
-            self.state = 'connected'
 
     def disconnect(self):
-        # if self.serial.is_open:
-        if self.state != 'disconnected':
+        if self.connected and not self.active:
             self.mutex.lock()
             self.keep_threads = False
             self.send_cond.wakeOne()
@@ -123,89 +82,101 @@ class KlipperController(ControllerInterface):
             self.input_thread.wait()
             self.output_thread.wait()
             self.serial.close()
-            self.state = 'disconnected'
+            self.connected = False
 
     def _input_worker(self):
         while self.keep_threads:
             line = ''
-            # TODO use self.cmd_delimiter instead '\n'
             while (not line or line[-1] != '\n') and self.keep_threads:
                 line += self.serial.readline().decode('ascii')
             if self.keep_threads:
                 self.mutex.lock()
-                self._process_input_line(line)
+                line = line.rstrip()
+                self.input_parser.process_input(line)
+                self.com_logger.log_received_data(line)
                 self.mutex.unlock()
 
     def _output_worker(self):
         while self.keep_threads:
             self.mutex.lock()
-            while not self._send_required() and self.keep_threads:
+            cmd = self._get_next_cmd()
+            while not cmd and self.keep_threads:
                 self.send_cond.wait(self.mutex)
+                cmd = self._get_next_cmd()
             if self.keep_threads:
-                cmd = self._next_cmd()
-                self.serial.write((cmd + self.cmd_delimiter).encode('ascii'))
-                self.logger.log_sent_data(cmd)
+                self.klipper_busy = True
+                self.serial.write((cmd + '\n').encode('ascii'))
+                self.com_logger.log_sent_data(cmd)
             self.mutex.unlock()
 
-    def send_manual_cmd(self, cmd):
-        if self.state == 'connected' or self.state == 'paused':
-            # remove leading/trailing spaces
-            cmd = re.sub(r'(^\s*)|(\s*$)', '', cmd)
-            self.manual_cmd_queue.put(cmd)
-            self.send_cond.wakeOne()
-            return True
-        return False
+    def _get_next_cmd(self):
+        if not self.klipper_busy:
+            if self.active:
+                if self.action == self.STOP:
+                    self.action = self.NONE
+                    self.task_list = []
+                elif self.action == self.ABORT:
+                    self.action = self.NONE
+                    self.task_list = []
+                    self.current_task.close()
+                    self.current_task = self.post_processor.abort_task()
+                    self.aborting = True
 
-    def _process_input_line(self, line):
-        line = line.rstrip()
-        if line == 'ok':
-            self.klipper_busy = False
-            self.send_cond.wakeOne()
-        # elif line[:2] == '!!':
-        #     pass
-        elif line[:18] == '// echo: THC_error':
-            words = line.split()
-            # v1 = float(words[3])
-            v2 = float(words[4])
-            self.logger.log_thc_data(v2)
-            return
-        # else:
-        #     pass
-        self.logger.log_received_data(line)
+                try:
+                    return self.current_task.pop()
+                except:
+                    self.current_task.close()
+                    try:
+                        self.current_task = self.task_list.pop(0)
+                    except:
+                        self.active = False
+                        self.aborting = False
+                        return None
+                    return self.current_task.pop() # assumed not empty
+            else:
+                try:
+                    return self.manual_cmd_queue.get_nowait()
+                except queue.Empty:
+                    pass
 
-    def _pull_next_job(self):
-        if not self.job_list:
-            self.state = 'connected'
-        else:
-            self.current_job = self.job_list.pop(0)
-            self.current_job.activate()
+                if self.action == self.START:
+                    self.action = self.NONE
+                    self.task_list = self.job_manager.generate_tasks(self.post_processor)
+                    try:
+                        self.current_task = self.task_list.pop(0)
+                    except:
+                        return None
+                    self.active = True
+                    return self.current_task.pop() # current_task should never be empty here
+                else:
+                    return None
 
-    def _pull_next_task(self):
-        self.current_task = self.current_job.state_index(JobModel.TODO)
-        if self.current_task < 0:
-            self._pull_next_job()
-            if self.current_job is not None:
-                self.current_task = self.current_job.state_index(JobModel.TODO)
+class THCWidget(pg.PlotWidget):
+    def __init__(self, thc_logger):
+        super().__init__()
+        self.thc_logger = thc_logger
+        grid_levels = [(1000, 0), (100, 0),(10, 0),(1, 0)]
+        # self.setAspectLocked()
+        self.showGrid(True, True, 0.5)
+        self.getAxis("bottom").setTickSpacing(levels=grid_levels)
+        self.getAxis("left").setTickSpacing(levels=grid_levels)
 
-    def _pull_next_cmds(self):
-        if self.current_task >= 0:
-            self.current_job.set_state(self.current_task, JobModel.DONE)
-        self._pull_next_task()
-        if self.current_task >= 0:
-            self.cmd_list = self.post_processor.generate(self.current_job,
-                                                         self.current_task)
+        self.setRange(yRange=(-30, 30), disableAutoRange=True)
 
-    def _send_required(self):
-        if self.state == 'running':
-            if not self.cmd_list:
-                self._pull_next_cmds()
+        self.curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(255, 87, 34), width=2))
+        self.on_thc_data()
+        self.addItem(self.curve)
+        self.thc_logger.thc_update.connect(self.on_thc_data)
 
-        cmd_available = self.cmd_list or not self.manual_cmd_queue.empty()
-        return cmd_available and not self.klipper_busy
+    def on_thc_data(self):
+        self.curve.setData(self.thc_logger.thc_data)
 
-    def _next_cmd(self):
-        self.klipper_busy = True
-        if not self.manual_cmd_queue.empty():
-            return self.manual_cmd_queue.get_nowait()
-        else:
-            return self.cmd_list.pop(0)
+class KlipperControllerUI(ControllerUIBase):
+    def __init__(self, controller):
+        super().__init__(controller)
+        self.thc_graph = THCWidget(self.controller.thc_logger)
+        layout = QtWidgets.QHBoxLayout()
+        layout.addWidget(self.console)
+        layout.addWidget(self.btn_box)
+        layout.addWidget(self.thc_graph)
+        self.setLayout(layout)

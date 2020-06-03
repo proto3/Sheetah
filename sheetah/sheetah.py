@@ -5,8 +5,7 @@ import pyqtgraph as pg
 
 from jobmodel import JobManager
 from jobui import JobGUI
-from klippercontroller import KlipperController
-from klippercontrollerui import KlipperControllerWidget
+from klippercontroller import KlipperController, KlipperControllerUI
 from postprocessor import PostProcessor
 
 class MainWindow(QtWidgets.QMainWindow):
@@ -38,7 +37,7 @@ if __name__ == '__main__':
 
     post_processor = PostProcessor()
     kc = KlipperController(job_manager, post_processor)
-    kcw = KlipperControllerWidget(kc)
+    kcw = KlipperControllerUI(kc)
     kc.connect('/tmp/printer')
 
     mw = MainWindow(job_gui.graphic_w, job_gui.sidebar_w, kcw)

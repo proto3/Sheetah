@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+from jobmodel import Task, JobTask
 
 class PostProcessor:
     def __init__(self):
-        self._start_seq = ['G90', 'G28 Z', 'G28 X Y']
+        self._init_seq = ['G90', 'G28 Z', 'G28 X Y']
+        self._abort_seq = ['M7', 'M5', 'M8']
 
-    def start_sequence(self):
-        return self._start_seq
+    def init_task(self):
+        return Task(self._init_seq)
+
+    def abort_task(self):
+        return Task(self._abort_seq)
 
     def generate(self, job, task_id):
         cut_path = job.get_cut_array(task_id)
@@ -28,7 +33,7 @@ class PostProcessor:
         gcode += ['M7',
                   'M5',
                   'M8']
-        return gcode
+        return JobTask(gcode, job, task_id, 6)
 
 class GcodeExporter:
     def export(filename, job_manager, post_processor):
