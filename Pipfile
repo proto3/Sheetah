@@ -16,6 +16,7 @@ pyqtgraph = "==0.10.0"
 regex = "*"
 PyQt5 = "==5.*"
 Shapely = "==1.7.*"
+pyserial = "==3.4"
 
 [requires]
 python_version = "3"
