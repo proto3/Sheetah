@@ -25,25 +25,23 @@ class Task():
         self.cmd_list = []
 
 class JobTask(Task):
-    def __init__(self, cmd_list, job, id, fail_point=0):
+    def __init__(self, cmd_list, job, id, dry_run):
         super().__init__(cmd_list)
         self.job = job
         self.id = id
-        self.fail_point = fail_point
+        self.dry_run = dry_run
 
     def pop(self):
-        if self.cmd_index == 0:
+        if not self.dry_run and self.cmd_index == 0:
             self.job.set_state(self.id, JobModel.RUNNING)
         return super().pop()
 
     def close(self):
-        if self.cmd_index >= len(self.cmd_list):
-            self.job.set_state(self.id, JobModel.DONE)
-        else:
-            if self.cmd_index > self.fail_point:
-                self.job.set_state(self.id, JobModel.FAILED)
+        if not self.dry_run:
+            if self.cmd_index >= len(self.cmd_list):
+                self.job.set_state(self.id, JobModel.DONE)
             else:
-                self.job.set_state(self.id, JobModel.TODO)
+                self.job.set_state(self.id, JobModel.FAILED)
         super().close()
 
 @dataclass(order=True)
@@ -219,10 +217,9 @@ class JobModel(QtCore.QObject):
         return self.cut_arrays[index]
     def _contour_transform(self):
         self.cut_shape = self.part_shape.buffer(self._kerf_width,
-                                                resolution=8,
+                                                resolution=32,
                                                 cap_style=1,
-                                                join_style=1,
-                                                mitre_limit=5.0) #TODO
+                                                join_style=1)
         sign = -1.0 if self._exterior_clockwise else 1.0
         self.cut_shape = shapely.geometry.polygon.orient(self.cut_shape, sign=sign)
         updated_cut_count = len(self.cut_shape.interiors) + 1
@@ -287,11 +284,11 @@ class JobManager(QtCore.QThread):
             self.job_list.remove(job)
             self.update.emit()
 
-    def generate_tasks(self, post_processor):
+    def generate_tasks(self, post_processor, dry_run):
         tasks = []
         for job in self.job_list:
             for i in job.state_indices(JobModel.TODO):
-                tasks.append(post_processor.generate(job, i))
+                tasks.append(post_processor.generate(job, i, dry_run))
         if tasks:
             tasks.insert(0, post_processor.init_task())
         return tasks

@@ -51,7 +51,7 @@ class InputDecisionTree:
 
 class CommunicationLogger(QtCore.QObject):
     log_available = QtCore.pyqtSignal()
-    incident = QtCore.pyqtSignal()
+    incident = QtCore.pyqtSignal(str)
     def __init__(self):
         super().__init__()
         self.queue = queue.Queue()
@@ -104,9 +104,10 @@ class ControllerBase(ABC):
     def __del__(self):
         self.disconnect()
 
-    def start(self):
+    def run(self, dry_run):
         if not self.active and self.action == self.NONE:
             self.action = self.START
+            self.dry_run = dry_run
             self.send_cond.wakeOne()
 
     def stop(self):
@@ -140,13 +141,13 @@ class ControllerBase(ABC):
         pass
 
 class JobErrorDialog(QtWidgets.QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, msg, parent=None):
         super().__init__(parent)
         self.setWindowTitle('Job incident')
         std_btns = QtWidgets.QDialogButtonBox.Ok
         self.buttonBox = QtWidgets.QDialogButtonBox(std_btns)
         self.buttonBox.accepted.connect(self.accept)
-        name_label = QtWidgets.QLabel('message', alignment=QtCore.Qt.AlignCenter)
+        name_label = QtWidgets.QLabel(msg, alignment=QtCore.Qt.AlignCenter)
         layout = QtWidgets.QVBoxLayout()
         layout.addWidget(name_label)
         layout.addWidget(self.buttonBox)
@@ -180,8 +181,8 @@ class ConsoleWidget(QtWidgets.QWidget):
         QtWidgets.QShortcut(QtCore.Qt.Key_Up, self.user_input_w, self.key_up)
         QtWidgets.QShortcut(QtCore.Qt.Key_Down, self.user_input_w, self.key_down)
 
-    def on_incident(self):
-        j = JobErrorDialog(self)
+    def on_incident(self, msg):
+        j = JobErrorDialog(msg[3:], self)
         j.exec_()
 
     def on_log(self):
@@ -223,23 +224,26 @@ class ControllerUIBase(QtWidgets.QWidget):
         self.controller = controller
         self.console = ConsoleWidget(self.controller)
 
-        self.start_btn = QtWidgets.QPushButton('Start')
-        self.stop_btn = QtWidgets.QPushButton('Abort')
-        self.pause_btn = QtWidgets.QPushButton('Stop')
-        self.start_btn.clicked.connect(self.on_start)
+        self.dry_run_checker = QtWidgets.QCheckBox('DryRun')
+        self.run_btn = QtWidgets.QPushButton('Run')
+        self.stop_btn = QtWidgets.QPushButton('Stop')
+        self.abort_btn = QtWidgets.QPushButton('Abort')
+        self.run_btn.clicked.connect(self.on_run)
         self.stop_btn.clicked.connect(self.on_stop)
-        self.pause_btn.clicked.connect(self.on_pause)
+        self.abort_btn.clicked.connect(self.on_abort)
+
 
         self.btn_box = QtWidgets.QGroupBox()
         layout = QtWidgets.QVBoxLayout()
-        layout.addWidget(self.start_btn)
+        layout.addWidget(self.dry_run_checker)
+        layout.addWidget(self.run_btn)
         layout.addWidget(self.stop_btn)
-        layout.addWidget(self.pause_btn)
+        layout.addWidget(self.abort_btn)
         self.btn_box.setLayout(layout)
 
-    def on_start(self):
-        self.controller.start()
+    def on_run(self):
+        self.controller.run(self.dry_run_checker.isChecked())
     def on_stop(self):
-        self.controller.abort()
-    def on_pause(self):
         self.controller.stop()
+    def on_abort(self):
+        self.controller.abort()

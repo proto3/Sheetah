@@ -27,9 +27,6 @@ class KlipperController(ControllerBase):
         self.internal_cmd_queue = queue.Queue()
         self.cut_running = False
 
-        # self.gcode_state_holder.append_node('M3', self.plasma_on)
-        # self.gcode_state_holder.append_node('M5', (def _: self.plasma = False))
-
         self.input_parser.append_node('ok', self._process_ok)
         self.input_parser.append_node('!!', self._process_error)
         self.input_parser.append_node('// echo: THC_error', self._process_thc)
@@ -43,7 +40,7 @@ class KlipperController(ControllerBase):
     def _process_error(self, input):
         if self.active:
             self.abort()
-            self.com_logger.incident.emit()
+            self.com_logger.incident.emit(input)
 
     def _process_thc(self, input):
         words = input.split()
@@ -54,12 +51,12 @@ class KlipperController(ControllerBase):
     def _process_arc_transfer_timeout(self, input):
         if self.active:
             self.abort()
-            self.com_logger.incident.emit()
+            self.com_logger.incident.emit(input)
 
     def _process_arc_loss(self, input):
         if self.active:
             self.abort()
-            self.com_logger.incident.emit()
+            self.com_logger.incident.emit(input)
 
     def connect(self, port):
         if not self.connected:
@@ -141,7 +138,7 @@ class KlipperController(ControllerBase):
 
                 if self.action == self.START:
                     self.action = self.NONE
-                    self.task_list = self.job_manager.generate_tasks(self.post_processor)
+                    self.task_list = self.job_manager.generate_tasks(self.post_processor, self.dry_run)
                     try:
                         self.current_task = self.task_list.pop(0)
                     except:
