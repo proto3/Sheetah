@@ -22,9 +22,31 @@ def arc2lines(center, radius, start=None, end=None):
     x = center[0] + radius * np.cos(theta)
     y = center[1] + radius * np.sin(theta)
     if is_circle:
-        return LinearRing(np.column_stack([x, y])[:-1])
+        return np.column_stack([x, y])[:-1]
     else:
-        return LineString(np.column_stack([x, y]))
+        return np.column_stack([x, y])
+
+def bulge2lines(a, b, bulge):
+    rot = np.array([[0,-1],
+                    [1, 0]])
+    on_right = bulge >= 0
+    if not on_right:
+        rot = -rot
+    bulge = abs(bulge)
+    ab = b-a
+    d = np.linalg.norm(ab)
+    r = d * (bulge + 1. / bulge) / 4
+    center_offset = r - d * bulge / 2
+    center_pos = a + ab/2 + center_offset / d * rot.dot(ab)
+    a_dir = a - center_pos
+    b_dir = b - center_pos
+    a_angle = math.atan2(a_dir[1], a_dir[0])
+    b_angle = math.atan2(b_dir[1], b_dir[0])
+    if on_right:
+        return arc2lines(center_pos, r, start=a_angle, end=b_angle)
+    else:
+        return np.flip(arc2lines(center_pos, r, start=b_angle, end=a_angle),
+                       axis=0)
 
 class DXFLoader:
     def load(filename):
@@ -34,23 +56,34 @@ class DXFLoader:
 
         for e in msp:
             if e.dxftype() == 'LINE':
-                coords = (e.dxf.start[:2], e.dxf.end[:2])
-                DXFLoader._store_geom(geom_list, LineString(coords))
+                path = (e.dxf.start[:2], e.dxf.end[:2])
+                DXFLoader._store_geom(geom_list, LineString(path))
             elif e.dxftype() == 'ARC':
                 start = e.dxf.start_angle * math.pi / 180
                 end = e.dxf.end_angle * math.pi / 180
-                elt = arc2lines(e.dxf.center[:2], e.dxf.radius, start, end)
-                DXFLoader._store_geom(geom_list, elt)
+                path = arc2lines(e.dxf.center[:2], e.dxf.radius, start, end)
+                DXFLoader._store_geom(geom_list, LineString(path))
             elif e.dxftype() == 'CIRCLE':
-                elt = arc2lines(e.dxf.center[:2], e.dxf.radius)
-                DXFLoader._store_geom(geom_list, elt)
+                path = arc2lines(e.dxf.center[:2], e.dxf.radius)
+                DXFLoader._store_geom(geom_list, LinearRing(path))
             elif e.dxftype() == 'LWPOLYLINE':
-                # TODO handle bulge (x, y, [start_width, [end_width, [bulge]]])
-                coords = np.array(e.get_points())[:,:2]
+                points = np.array(e.get_points())
+                path = np.empty((0,2))
+                for i in range(len(points)-1):
+                    line = points[i:i+2,:2]
+                    bulge = points[i][4]
+                    if bulge != 0:
+                        line = bulge2lines(line[0], line[1], bulge)
+                    path = np.vstack((path[:-1], line))
                 if e.closed:
-                    DXFLoader._store_geom(geom_list, LinearRing(coords))
+                    if points[-1][4] != 0:
+                        a = points[-1][:2]
+                        b = points[0][:2]
+                        bulge = points[-1][4]
+                        path = np.vstack((path[:-1], bulge2lines(a, b, bulge)))
+                    DXFLoader._store_geom(geom_list, LinearRing(path))
                 else:
-                    DXFLoader._store_geom(geom_list, LineString(coords))
+                    DXFLoader._store_geom(geom_list, LineString(path))
             else:
                 raise Exception('unimplemented \"'+e.dxftype()+'\" dxf entity.')
 
