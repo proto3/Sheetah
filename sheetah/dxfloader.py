@@ -14,6 +14,8 @@ def arc2lines(center, radius, start=None, end=None):
         end = 2 * math.pi
         nb_segments = max(2, math.ceil(2 * math.pi / max_angle) + 1)
     else:
+        if end < start:
+            end += math.pi*2
         arc = math.fmod((end - start) + 2 * math.pi, 2 * math.pi)
         nb_segments = max(2, math.ceil(arc / max_angle) + 1)
     theta = np.linspace(start, end, nb_segments + 1)
