@@ -1,8 +1,9 @@
 import numpy as np
 import ezdxf, math
 from shapely.geometry.polygon import Polygon, LineString, LinearRing
-from shapely.ops import polygonize_full
-import shapely.wkt
+from shapely.ops import polygonize_full, linemerge
+from shapely.affinity import translate
+from shapely import wkt
 
 def arc2lines(center, radius, start=None, end=None):
     max_error = 1e-2
@@ -87,65 +88,90 @@ class DXFLoader:
             else:
                 raise Exception('unimplemented \"'+e.dxftype()+'\" dxf entity.')
 
+        # extract polygons from the geoms list
         result, dangles, cuts, invalids = polygonize_full(geom_list)
         polygons = list(result)
 
-        # print('dangles ', list(dangles))
-        # print('cuts', list(cuts))
+        # look for open paths in the remaining geoms
+        lines = linemerge(list(cuts))
+        if isinstance(lines, LineString):
+            lines = [lines]
+        else:
+            lines = list(lines)
+
         if list(invalids):
             raise Exception('found invalid geometry (mobius loop, etc).')
 
-        if not polygons:
-            raise Exception('no polygon found.')
+        if not polygons and not lines:
+            raise Exception('no geometry found.')
 
-        # retrieve interior assigned by polygonize to create multilevel hierarchy
+        # flatten polygons exterior/interior hierarchy
         for i, p in enumerate(polygons):
             if p.interiors:
                 polygons[i] = Polygon(p.exterior.coords)
 
-        # fail on overlapped contours
-        for i, a in enumerate(polygons):
-            for b in polygons[i+1:]:
-                if a.overlaps(b):
-                    raise Exception('overlapping polygons.')
+        # fail on self crossing lines
+        for line in lines:
+            if not line.is_simple:
+                raise Exception('found self crossing lines.')
 
-        hierarchy = [(polygons[0], [])]
-        for p in polygons[1:]:
-            DXFLoader.append_to_hierarchy(hierarchy, p)
+        # fail on overlapping geoms
+        elements = polygons + lines
+        for i, a in enumerate(elements):
+            for b in elements[i+1:]:
+                if a.intersects(b) and not a.contains(b) and not b.contains(a):
+                    raise Exception('found overlapping geoms.')
 
-        hierarchy = DXFLoader.extract_subparts(hierarchy)
+        parts = list()
+        if polygons:
+            hierarchy = [(elements[0], [])]
+            for p in elements[1:]:
+                DXFLoader.append_to_hierarchy(hierarchy, p)
+            hierarchy = DXFLoader.extract_subparts(hierarchy)
+            for node in hierarchy:
+                if isinstance(node[0], LineString):
+                    x, y, _, _ = node[0].bounds
+                    line = translate(node[0], xoff=-x, yoff=-y)
+                    parts.append((None, [line]))
+                else:
+                    paths = [e[0] for e in node[1]
+                             if isinstance(e[0], LineString)]
+                    holes = [LinearRing(e[0].exterior) for e in node[1]
+                             if isinstance(e[0], Polygon)]
+                    polygon = Polygon(LinearRing(node[0].exterior), holes)
+                    if not polygon.is_valid:
+                        raise Exception(
+                            'invalid polygon (see shapely definition).')
+                    x, y, _, _ = polygon.exterior.bounds
+                    polygon = translate(polygon, xoff=-x, yoff=-y)
+                    paths = [translate(l, xoff=-x, yoff=-y) for l in paths]
+                    parts.append((polygon, paths))
+        else:
+            for line in lines:
+                x, y, _, _ = line.bounds
+                line = translate(line, xoff=-x, yoff=-y)
+                parts.append((None, [line]))
 
-        final_polygons = list()
-        for block in hierarchy:
-            holes = [LinearRing(b[0].exterior) for b in block[1]]
-            polygon = Polygon(LinearRing(block[0].exterior), holes)
-            x, y, _, _ = polygon.exterior.bounds
-            polygon = shapely.affinity.translate(polygon, xoff=-x, yoff=-y)
-            if not polygon.is_valid:
-                raise Exception('invalid polygon (see shapely definition).')
+        return parts
 
-            final_polygons.append(polygon)
-
-        return final_polygons
-
-    def append_to_hierarchy(hierarchy, polygon):
+    def append_to_hierarchy(hierarchy, geom):
         children_id = list()
-        for i, block in enumerate(hierarchy):
-            if polygon.contains(block[0]):
+        for i, node in enumerate(hierarchy):
+            if geom.contains(node[0]):
                 children_id.append(i)
         if children_id:
             children = list()
             for i in sorted(children_id, reverse=True):
                 children.append(hierarchy.pop(i))
-            hierarchy.append((polygon, children))
+            hierarchy.append((geom, children))
             return
 
-        for block in hierarchy:
-            if block[0].contains(polygon):
-                DXFLoader.append_to_hierarchy(block[1], polygon)
+        for node in hierarchy:
+            if node[0].contains(geom):
+                DXFLoader.append_to_hierarchy(node[1], geom)
                 return
 
-        hierarchy.append((polygon, []))
+        hierarchy.append((geom, []))
 
     def extract_subparts(hierarchy):
         flatten = list()
@@ -161,4 +187,4 @@ class DXFLoader:
         return flatten
 
     def _store_geom(elt_list, elt):
-        elt_list.append(shapely.wkt.loads(shapely.wkt.dumps(elt, rounding_precision=3)))
+        elt_list.append(wkt.loads(wkt.dumps(elt, rounding_precision=3)))
