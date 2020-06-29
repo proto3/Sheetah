@@ -7,6 +7,31 @@ import pathlib, math
 from dataclasses import dataclass
 from dxfloader import DXFLoader
 
+def dist_abc(points):
+    a = points[:,:-2]  # left
+    b = points[:,2:]   # right
+    c = points[:,1:-1] # mid
+    ab = b-a
+    ca = a-c
+    dist = np.abs(np.cross(ab, ca, axis=0)) / np.linalg.norm(ab, axis=0)
+    return np.hstack((np.inf, dist, np.inf))
+
+def decimate(points, tol):
+    accu = np.zeros(points.shape[1])
+    dist = dist_abc(points)
+    while True:
+        i = np.argmin(dist)
+        if dist[i] + accu[i] < tol:
+            accu[i-1] += dist[i]
+            accu[i+1] += dist[i]
+            accu = np.delete(accu, i)
+            points = np.delete(points, i, axis=1)
+            dist = np.delete(dist, i)
+            dist[i-1:i+1] = dist_abc(points[:,i-2:i+2])[1:3]
+        else:
+            break
+    return points
+
 class Task():
     def __init__(self, cmd_list):
         self.cmd_list = cmd_list
@@ -238,13 +263,16 @@ class JobModel(QtCore.QObject):
 
     def _contour_transform(self):
         if self.surf is not None:
-            self.surf_bf = self.surf.buffer(self._kerf_width, resolution=32, cap_style=1, join_style=1)
+            self.surf_bf = self.surf.buffer(self._kerf_width, resolution=32,
+                                            cap_style=1, join_style=1)
             sign = -1.0 if self._exterior_clockwise else 1.0
             self.surf_bf = geo.polygon.orient(self.surf_bf, sign=sign)
 
             self.surf_bf_arr = []
             for ring in list(self.surf_bf.interiors) + [self.surf_bf.exterior]:
-                self.surf_bf_arr.append(np.array(ring.coords.xy))
+                arr = np.array(ring.coords.xy)
+                decimated = decimate(arr, 1e-2)
+                self.surf_bf_arr.append(decimated)
 
             cut_count = len(self.surf_bf.interiors) + 1 + len(self.paths)
             if cut_count != self.cut_count:
