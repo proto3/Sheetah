@@ -12,10 +12,10 @@ class QTHCLogger(QtCore.QObject):
     thc_update = QtCore.pyqtSignal()
     def __init__(self):
         super().__init__()
-        self.thc_data = np.zeros(1000)
-    def log_thc_data(self, val):
+        self.thc_data = np.zeros((1000, 3))
+    def log_thc_data(self, z_pos, arc_v, speed):
         self.thc_data[:-1] = self.thc_data[1:]
-        self.thc_data[-1] = val
+        self.thc_data[-1] = np.array([z_pos, arc_v, speed])
         self.thc_update.emit()
 
 class KlipperController(ControllerBase):
@@ -26,6 +26,7 @@ class KlipperController(ControllerBase):
         self.thc_logger = QTHCLogger()
         self.internal_cmd_queue = queue.Queue()
         self.cut_running = False
+        self.task_list = []
 
         self.input_parser.append_node('ok', self._process_ok)
         self.input_parser.append_node('!!', self._process_error)
@@ -44,9 +45,10 @@ class KlipperController(ControllerBase):
 
     def _process_thc(self, input):
         words = input.split()
-        # v1 = float(words[3])
-        v2 = float(words[4])
-        self.thc_logger.log_thc_data(v2)
+        z_pos = float(words[3])
+        arc_v = float(words[4])
+        speed = float(words[5])
+        self.thc_logger.log_thc_data(z_pos, arc_v, speed)
 
     def _process_arc_transfer_timeout(self, input):
         if self.active:
@@ -157,16 +159,21 @@ class THCWidget(pg.PlotWidget):
         self.showGrid(True, True, 0.5)
         self.getAxis("bottom").setTickSpacing(levels=grid_levels)
         self.getAxis("left").setTickSpacing(levels=grid_levels)
+        self.setRange(yRange=(0, 200), disableAutoRange=True)
 
-        self.setRange(yRange=(-30, 30), disableAutoRange=True)
-
-        self.curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(255, 87, 34), width=2))
+        self.z_pos_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(87, 200, 34), width=2))
+        self.arc_v_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(255, 87, 34), width=2))
+        self.speed_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(34, 120, 255), width=2))
         self.on_thc_data()
-        self.addItem(self.curve)
+        self.addItem(self.z_pos_curve)
+        self.addItem(self.arc_v_curve)
+        self.addItem(self.speed_curve)
         self.thc_logger.thc_update.connect(self.on_thc_data)
 
     def on_thc_data(self):
-        self.curve.setData(self.thc_logger.thc_data)
+        self.z_pos_curve.setData(self.thc_logger.thc_data[:,0])
+        self.arc_v_curve.setData(self.thc_logger.thc_data[:,1])
+        self.speed_curve.setData(self.thc_logger.thc_data[:,2])
 
 class KlipperControllerUI(ControllerUIBase):
     def __init__(self, controller):
