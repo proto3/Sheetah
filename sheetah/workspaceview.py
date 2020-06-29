@@ -20,7 +20,7 @@ class JobVisual:
         self.ignored_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(100, 100, 100), width=2))
 
         pos = self.job.position
-        size = self.job.get_size()
+        size = np.maximum(self.job.get_size(), np.array([1, 1]))
         self.roi = pg.ROI(pos=pos, size=size, pen=pg.mkPen(color=(255,255,255,20)))
         self.roi.addRotateHandle([0, 0], [0.5, 0.5])
         self.job.shape_update.connect(self.on_job_shape_update)
