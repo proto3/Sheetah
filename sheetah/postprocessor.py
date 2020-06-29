@@ -16,21 +16,20 @@ class PostProcessor:
     def generate(self, job, task_id, dry_run=False):
         cut_path = job.get_cut_array(task_id)
         gcode = list()
-        gcode += ['G90',
-                  'G1 Z20']
-        gcode += ['G1 F6000 X' + '{:.3f}'.format(cut_path[0][0]) + ' Y' + '{:.3f}'.format(cut_path[1][0]),
-                  'PROBE']
+        gcode = ['G90',
+                 'G1 F6000 X' + '{:.3f}'.format(cut_path[0][0]) + ' Y' + '{:.3f}'.format(cut_path[1][0]),
+                 'PROBE']
         if dry_run:
-            gcode += ['G91', 'G1 Z20', 'G90']
+            gcode += ['G91', 'G1 F6000 Z50', 'G90', 'M6 V0 T-1']
         else:
             gcode += ['G91', 'G1 Z3.8', 'M3', 'G4 P' + str(job.pierce_delay),
             'G1 Z-2.3', 'G90',
-            'M6 V' + '{:.2f}'.format(job.arc_voltage)]
+            'M6 V' + '{:.2f}'.format(job.arc_voltage) + ' A50 T1800']
         gcode += ['G1 F' + str(job.feedrate)]
         for x,y in cut_path.transpose()[1:]:
             gcode += ['G1 X' + '{:.3f}'.format(x) + ' Y' + '{:.3f}'.format(y)]
-        if not dry_run:
-            gcode += ['M7',
-                      'M5',
-                      'M8']
+        if dry_run:
+            gcode += ['M7', 'M8']
+        else:
+            gcode += ['M7', 'M5', 'M8']
         return JobTask(gcode, job, task_id, dry_run)
