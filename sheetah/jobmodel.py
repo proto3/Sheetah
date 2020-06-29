@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from PyQt5 import QtCore
+import shapely.geometry as geo
 import numpy as np
 import pathlib, math
 from dataclasses import dataclass
 from dxfloader import DXFLoader
-from shapely import affinity
-import shapely
 
 class Task():
     def __init__(self, cmd_list):
@@ -59,10 +58,11 @@ class JobModel(QtCore.QObject):
     IGNORED = 4
     _states = (TODO, RUNNING, DONE, FAILED, IGNORED)
 
-    def __init__(self, name, index, polygon):
+    def __init__(self, name, index, polygon=None, paths=[]):
         super().__init__()
         self._name = name
         self._index = index
+        self.need_contour_transform = self.need_affine_transform = False
 
         #TODO use default params handler to fill these attr
         self._arc_voltage = 110.0
@@ -73,17 +73,31 @@ class JobModel(QtCore.QObject):
         self._position = np.array([10.,10.])
         self._angle = 0.
 
-        sign = -1.0 if self._exterior_clockwise else 1.0
-        polygon = shapely.geometry.polygon.orient(polygon, sign=sign)
-        self.part_shape = polygon
-        self.cut_shape = self.part_shape_mov = self.cut_shape_mov = None
+        self.surf = polygon # surface polygon
+        self.surf_bf = None # buffered surface polygon
+        self.paths = paths  # open path LineStrings
 
-        self.contour_count = len(self.part_shape.interiors) + 1
-        self.cut_count = 0
-        self.lead_pos = self.cut_state = list()
+        # surface numpy representations (origin and affine transformed)
+        self.surf_arr = self.surf_tr_arr = []
+        self.surf_bf_arr = self.surf_bf_tr_arr = []
 
-        self.need_contour_transform = False
-        self.need_affine_transform = False
+        # paths numpy representations (origin and affine transformed)
+        self.path_arr = self.path_tr_arr = []
+
+        if self.surf is not None:
+            self.contour_count = len(self.paths) + len(self.surf.interiors) + 1
+            self.cut_count = 0
+            # generate surf_arr
+            for ring in list(self.surf.interiors) + [self.surf.exterior]:
+                self.surf_arr.append(np.array(ring.coords.xy))
+        else:
+            self.contour_count = self.cut_count = len(self.paths)
+            self.lead_pos = [0.] * self.cut_count
+            self.cut_state = [self.TODO] * self.cut_count
+
+        # generate path_arr
+        for path in self.paths:
+            self.path_arr.append(np.array(path.coords.xy))
 
         self._contour_transform()
         self._affine_transform()
@@ -171,6 +185,7 @@ class JobModel(QtCore.QObject):
 
     def get_state(self, index):
         return self.cut_state[index]
+
     def set_state(self, index, state):
         """Set state of a particular cut."""
         if state not in self._states:
@@ -178,6 +193,7 @@ class JobModel(QtCore.QObject):
         self.cut_state[index] = state
         self.state_update.emit()
         self.shape_update.emit()
+
     def state_index(self, state):
         """Return index of the first cut matching state, -1 otherwise."""
         if state not in self._states:
@@ -187,63 +203,81 @@ class JobModel(QtCore.QObject):
         except:
             index = -1
         return index
+
     def state_indices(self, state):
         """Return indices of cuts matching state."""
         if state not in self._states:
             raise Exception('Unknown state ' + str(state) + '.')
         return [i for i, s in enumerate(self.cut_state) if s==state]
+
     def get_bounds(self):
-        if self.need_affine_transform:
-            self._affine_transform()
-        return np.array(self.cut_shape_mov.bounds)
+        self._check_transform()
+        arr = np.hstack(self.get_cut_arrays())
+        return np.concatenate((np.amin(arr, axis=1), np.amax(arr, axis=1)))
+
     def get_size(self):
-        if self.need_affine_transform:
-            self._affine_transform()
-        rel_bounds = np.array(self.cut_shape.bounds)
-        return rel_bounds[2:] - rel_bounds[:2]
+        bounds = self.get_bounds()
+        return bounds[2:] - bounds[:2]
+
     def get_cut_count(self):
         return self.cut_count
-    def get_part_array(self, index):
+
+    def get_part_arrays(self):
+        self._check_transform()
+        return (self.path_tr_arr + self.surf_tr_arr)
+
+    def get_cut_arrays(self):
+        self._check_transform()
+        return (self.path_tr_arr + self.surf_bf_tr_arr)
+
+    def _check_transform(self):
         if self.need_contour_transform:
             self._contour_transform()
         if self.need_affine_transform:
             self._affine_transform()
-        return self.part_arrays[index]
-    def get_cut_array(self, index):
-        if self.need_contour_transform:
-            self._contour_transform()
-        if self.need_affine_transform:
-            self._affine_transform()
-        return self.cut_arrays[index]
+
     def _contour_transform(self):
-        self.cut_shape = self.part_shape.buffer(self._kerf_width,
-                                                resolution=32,
-                                                cap_style=1,
-                                                join_style=1)
-        sign = -1.0 if self._exterior_clockwise else 1.0
-        self.cut_shape = shapely.geometry.polygon.orient(self.cut_shape, sign=sign)
-        updated_cut_count = len(self.cut_shape.interiors) + 1
-        if updated_cut_count != self.cut_count:
-            self.cut_count = updated_cut_count
-            self.lead_pos = [0.] * self.cut_count
-            self.cut_state = [self.TODO] * self.cut_count
-        self.need_contour_transform = False
+        if self.surf is not None:
+            self.surf_bf = self.surf.buffer(self._kerf_width, resolution=32, cap_style=1, join_style=1)
+            sign = -1.0 if self._exterior_clockwise else 1.0
+            self.surf_bf = geo.polygon.orient(self.surf_bf, sign=sign)
+
+            self.surf_bf_arr = []
+            for ring in list(self.surf_bf.interiors) + [self.surf_bf.exterior]:
+                self.surf_bf_arr.append(np.array(ring.coords.xy))
+
+            cut_count = len(self.surf_bf.interiors) + 1 + len(self.paths)
+            if cut_count != self.cut_count:
+                self.cut_count = cut_count
+                self.lead_pos = [0.] * self.cut_count
+                self.cut_state = [self.TODO] * self.cut_count
+
         self.need_affine_transform = True
+        self.need_contour_transform = False
+
+    def _apply_tr_mat(tr_mat, arr):
+        return np.dot(tr_mat, np.insert(arr, 2, 1., axis=0))[:-1]
+
     def _affine_transform(self):
+        self.surf_tr_arr = []
+        self.surf_bf_tr_arr = []
+        self.path_tr_arr = []
+
+        #prepare transform matrix
         r_rad = self._angle / 180 * math.pi
-        a = math.cos(r_rad)
-        b = math.sin(r_rad)
-        coeffs = [a,-b, b, a] + list(self._position)
-        self.part_shape_mov = affinity.affine_transform(self.part_shape, coeffs)
-        self.cut_shape_mov = affinity.affine_transform(self.cut_shape, coeffs)
-        self.part_arrays = list()
-        rings = list(self.part_shape_mov.interiors) + [self.part_shape_mov.exterior]
-        for ring in rings:
-            self.part_arrays.append(np.array(ring.coords.xy))
-        self.cut_arrays = list()
-        rings = list(self.cut_shape_mov.interiors) + [self.cut_shape_mov.exterior]
-        for ring in rings:
-            self.cut_arrays.append(np.array(ring.coords.xy))
+        cos = math.cos(r_rad)
+        sin = math.sin(r_rad)
+        tr_mat = np.array([[cos,-sin, self._position[0]],
+                           [sin, cos, self._position[1]],
+                           [  0,   0,                1]])
+
+        for arr in self.surf_arr:
+            self.surf_tr_arr.append(JobModel._apply_tr_mat(tr_mat, arr))
+        for arr in self.surf_bf_arr:
+            self.surf_bf_tr_arr.append(JobModel._apply_tr_mat(tr_mat, arr))
+        for arr in self.path_arr:
+            self.path_tr_arr.append(JobModel._apply_tr_mat(tr_mat, arr))
+
         self.need_affine_transform = False
 
 class JobManager(QtCore.QThread):
@@ -267,16 +301,16 @@ class JobManager(QtCore.QThread):
             index = 0
 
         try:
-            polygons = DXFLoader.load(filename)
+            parts = DXFLoader.load(filename)
         except Exception as e:
             print('Unable to load ' + path.name + ', ' + str(e))
             return
 
-        if len(polygons) > 1:
-            for i, polygon in enumerate(polygons):
-                self.job_list.append(JobModel(name + '_' + str(i), index+i, polygon))
-        elif polygons:
-            self.job_list.append(JobModel(name, index, polygons[0]))
+        if len(parts) > 1:
+            for i, p in enumerate(parts):
+                self.job_list.append(JobModel(name + '_' + str(i), index+i, p[0], p[1]))
+        elif parts:
+            self.job_list.append(JobModel(name, index, parts[0][0], parts[0][1]))
         self.update.emit()
 
     def remove_job(self, job):

@@ -5,8 +5,6 @@ import pyqtgraph as pg
 import numpy as np
 import cv2, math
 
-from shapely.geometry import Point
-
 class JobVisual:
     def __init__(self, job):
         self.job = job
@@ -30,29 +28,27 @@ class JobVisual:
         self.on_job_shape_update()
 
     def on_roi_hover(self):
-        self.job.get_bounds() # just to regen if needed
-        self.job.cut_shape_mov
+        pass
 
     def on_job_shape_update(self):
         connect = np.empty(0, dtype=np.bool)
         data = np.empty((2,0), dtype=np.float)
-        for i in range(self.job.contour_count):
-            c = self.job.get_part_array(i)
-            connected = np.repeat(True, c.shape[1])
+
+        for arr in self.job.get_part_arrays():
+            connected = np.repeat(True, arr.shape[1])
             connected[-1] = False
             connect = np.concatenate((connect, connected))
-            data = np.concatenate((data, c), axis=1)
+            data = np.concatenate((data, arr), axis=1)
         self.part_curve.setData(data[0], data[1], connect=connect)
 
         connect = [np.empty(0, dtype=np.bool) for i in range(5)]
         data = [np.empty((2,0), dtype=np.float) for i in range(5)]
-        for i in range(self.job.get_cut_count()):
-            cut = self.job.get_cut_array(i)
+        for i, arr in enumerate(self.job.get_cut_arrays()):
             state = self.job.get_state(i)
-            connected = np.repeat(True, cut.shape[1])
+            connected = np.repeat(True, arr.shape[1])
             connected[-1] = False
             connect[state] = np.concatenate((connect[state], connected))
-            data[state] = np.concatenate((data[state], cut), axis=1)
+            data[state] = np.concatenate((data[state], arr), axis=1)
 
         self.todo_curve.setData(data[0][0], data[0][1], connect=connect[0])
         self.running_curve.setData(data[1][0], data[1][1], connect=connect[1])
