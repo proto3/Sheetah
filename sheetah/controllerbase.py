@@ -6,6 +6,9 @@ import regex as re
 import queue
 from jobmodel import JobModel
 
+from PyQt5 import QtGui
+from jobmodel import Task
+
 class InputDecisionTree:
     def __init__(self, default_function=None):
         self._prefix = ''
@@ -103,6 +106,15 @@ class ControllerBase(ABC):
 
     def __del__(self):
         self.disconnect()
+
+    def run_file(self, filename):
+        if not self.active and self.action == self.NONE:
+            with open(filename) as f:
+                cmd_list = f.read().splitlines()
+            print(cmd_list)
+            self.current_task = Task(cmd_list)
+            self.active = True
+            self.send_cond.wakeOne()
 
     def run(self, dry_run):
         if not self.active and self.action == self.NONE:
@@ -228,10 +240,11 @@ class ControllerUIBase(QtWidgets.QWidget):
         self.run_btn = QtWidgets.QPushButton('Run')
         self.stop_btn = QtWidgets.QPushButton('Stop')
         self.abort_btn = QtWidgets.QPushButton('Abort')
+        self.run_file_btn = QtWidgets.QPushButton('Run file')
         self.run_btn.clicked.connect(self.on_run)
         self.stop_btn.clicked.connect(self.on_stop)
         self.abort_btn.clicked.connect(self.on_abort)
-
+        self.run_file_btn.clicked.connect(self.on_run_file)
 
         self.btn_box = QtWidgets.QGroupBox()
         layout = QtWidgets.QVBoxLayout()
@@ -239,7 +252,15 @@ class ControllerUIBase(QtWidgets.QWidget):
         layout.addWidget(self.run_btn)
         layout.addWidget(self.stop_btn)
         layout.addWidget(self.abort_btn)
+        layout.addWidget(self.run_file_btn)
         self.btn_box.setLayout(layout)
+
+    def on_run_file(self):
+        filename, _ = QtGui.QFileDialog.getOpenFileName(self,
+                      'Open File', QtCore.QDir.currentPath(),
+                      'gcode (*.gcode);; All Files (*)')
+        if filename:
+            self.controller.run_file(filename)
 
     def on_run(self):
         self.controller.run(self.dry_run_checker.isChecked())
