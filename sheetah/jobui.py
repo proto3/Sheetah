@@ -82,7 +82,6 @@ class JobItemWidget(QtGui.QGroupBox):
 
         self.name_label = QtGui.QLabel(job.name, alignment=QtCore.Qt.AlignCenter)
         self.params_label = QtGui.QLabel(font=QtGui.QFont('SansSerif', 10))
-        self.state_label = QtGui.QLabel('')
 
         self.del_btn = QtGui.QPushButton()
         self.del_btn.setIcon(QtGui.QIcon.fromTheme('list-remove'))
@@ -98,7 +97,6 @@ class JobItemWidget(QtGui.QGroupBox):
         layout.addWidget(self.param_btn, 1, 1)
         layout.addWidget(self.del_btn, 2, 1)
         layout.setColumnStretch(0, 1)
-        # layout.addWidget(self.state_label)
         self.setLayout(layout)
 
         self.del_btn.clicked.connect(self.on_delete)
@@ -106,7 +104,6 @@ class JobItemWidget(QtGui.QGroupBox):
         # self.params_dialog.rejected.connect(self.on_param_canceled)
         # self.params_dialog.finished.connect(self.on_param_closed)
 
-        self.job.state_update.connect(self.on_state_update)
         self.job.param_update.connect(self.on_param_update)
         self.on_param_update()
         self._item = None
@@ -128,9 +125,6 @@ class JobItemWidget(QtGui.QGroupBox):
 
     def on_kerf(self):
         self.job.kerf_width = self.kerf_width_spbox.value()
-
-    def on_state_update(self):
-        self.state_label.setText(str(self.job.cut_state))
 
 class JobListWidget(QtGui.QListWidget):
     mov = QtCore.pyqtSignal()
