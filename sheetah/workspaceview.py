@@ -23,12 +23,11 @@ class JobVisual:
         self.roi.addRotateHandle([0, 0], [0.5, 0.5])
         self.job.shape_update.connect(self.on_job_shape_update)
         self.roi.sigRegionChanged.connect(self.on_roi_update)
-        self.roi.sigHoverEvent.connect(self.on_roi_hover)
-        # hoverLeaveEvent
+        self.roi.sigRegionChangeFinished.connect(self.on_roi_release)
         self.on_job_shape_update()
 
-    def on_roi_hover(self):
-        pass
+    def on_roi_release(self):
+        print(self.job.name, ' pos:', self.job.position, ' rot:', self.job.angle )
 
     def on_job_shape_update(self):
         connect = np.empty(0, dtype=np.bool)
