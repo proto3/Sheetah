@@ -89,6 +89,13 @@ class JobItemWidget(QtGui.QGroupBox):
         self.param_btn = QtGui.QPushButton()
         self.param_btn.setIcon(QtGui.QIcon.fromTheme('applications-system'))
 
+        self.set_state_btn = QtGui.QPushButton('Set')
+        self.index_spbox = QtGui.QSpinBox()
+        self.index_spbox.setPrefix("index:")
+        self.state_spbox = QtGui.QSpinBox()
+        self.state_spbox.setPrefix("state:")
+        self.set_state_btn.clicked.connect(self.on_set_state)
+
         self.params_dialog = JobParamDialog(self.job, self)
 
         layout = QtGui.QGridLayout()
@@ -96,6 +103,9 @@ class JobItemWidget(QtGui.QGroupBox):
         layout.addWidget(self.params_label, 1, 0, 2, 1)
         layout.addWidget(self.param_btn, 1, 1)
         layout.addWidget(self.del_btn, 2, 1)
+        layout.addWidget(self.set_state_btn, 3, 0)
+        layout.addWidget(self.index_spbox, 3, 1)
+        layout.addWidget(self.state_spbox, 3, 2)
         layout.setColumnStretch(0, 1)
         self.setLayout(layout)
 
@@ -107,6 +117,13 @@ class JobItemWidget(QtGui.QGroupBox):
         self.job.param_update.connect(self.on_param_update)
         self.on_param_update()
         self._item = None
+
+    def on_set_state(self):
+        i = self.index_spbox.value()
+        state = self.state_spbox.value()
+        if i >= 0 and i < len(self.job.cut_state):
+            if state in self.job._states:
+                self.job.set_state(i, state)
 
     def on_param_update(self):
         s = str()
