@@ -154,11 +154,7 @@ class THCWidget(pg.PlotWidget):
     def __init__(self, thc_logger):
         super().__init__()
         self.thc_logger = thc_logger
-        grid_levels = [(1000, 0), (100, 0),(10, 0),(1, 0)]
-        # self.setAspectLocked()
         self.showGrid(True, True, 0.5)
-        self.getAxis("bottom").setTickSpacing(levels=grid_levels)
-        self.getAxis("left").setTickSpacing(levels=grid_levels)
         self.setRange(yRange=(0, 200), disableAutoRange=True)
 
         self.z_pos_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(87, 200, 34), width=2))
