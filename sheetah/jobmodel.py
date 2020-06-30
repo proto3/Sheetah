@@ -90,10 +90,10 @@ class JobModel(QtCore.QObject):
         self.need_contour_transform = self.need_affine_transform = False
 
         #TODO use default params handler to fill these attr
-        self._arc_voltage = 110.0
-        self._exterior_clockwise = False
-        self._feedrate = 10000
-        self._kerf_width = 2.0
+        self._arc_voltage = 150.0
+        self._exterior_clockwise = True
+        self._feedrate = 5000
+        self._kerf_width = 1.5
         self._pierce_delay = 500
         self._position = np.array([10.,10.])
         self._angle = 0.
