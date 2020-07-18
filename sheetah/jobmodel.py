@@ -263,7 +263,7 @@ class JobModel(QtCore.QObject):
 
     def _contour_transform(self):
         if self.surf is not None:
-            self.surf_bf = self.surf.buffer(self._kerf_width, resolution=32,
+            self.surf_bf = self.surf.buffer(self._kerf_width / 2, resolution=32,
                                             cap_style=1, join_style=1)
             sign = -1.0 if self._exterior_clockwise else 1.0
             self.surf_bf = geo.polygon.orient(self.surf_bf, sign=sign)

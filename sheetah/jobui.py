@@ -140,9 +140,6 @@ class JobItemWidget(QtGui.QGroupBox):
     def on_delete(self):
         self.job_manager.remove_job(self.job)
 
-    def on_kerf(self):
-        self.job.kerf_width = self.kerf_width_spbox.value()
-
 class JobListWidget(QtGui.QListWidget):
     mov = QtCore.pyqtSignal()
     def __init__(self):
