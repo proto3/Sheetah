@@ -48,6 +48,37 @@ def bulge2lines(a, b, bulge):
     else:
         return np.flip(arc2lines(center_pos, r, start=b_angle, end=a_angle),
                        axis=0)
+def spline2lines(spline):
+    epsilon = 1e-2
+
+    t = np.linspace(0.0, 1.0, num=4).reshape(4,1)
+    points = (spline[0] * (1-t)**3 +
+              spline[1] * 3 * t * (1-t)**2 +
+              spline[2] * 3 * t**2 * (1-t) +
+              spline[3] * t**3)
+
+    i = 1
+    curve_data = np.hstack((t, points)).transpose()
+    while i < np.size(curve_data, 1):
+        t_mid = (curve_data[0][i] + curve_data[0][i-1]) / 2
+
+        a = curve_data[1:,i-1]
+        b = curve_data[1:,i]
+        c = (spline[0] * (1-t_mid)**3 +
+             spline[1] * 3 * t_mid * (1-t_mid)**2 +
+             spline[2] * 3 * t_mid**2 * (1-t_mid) +
+             spline[3] * t_mid**3)
+        ab = b - a
+        ac = c - a
+        ac_proj_in_ab = np.sum(ab * ac, axis=0) / np.sum(np.square(ab), axis=0)
+        dist_to_curve = np.linalg.norm(ac_proj_in_ab * ab - ac, axis=0)
+
+        if dist_to_curve > epsilon:
+            curve_data = np.insert(curve_data, i, [t_mid, c[0], c[1]], axis=1)
+        else:
+            i += 1
+
+    return curve_data[1:]
 
 class DXFLoader:
     def load(filename):
@@ -85,6 +116,15 @@ class DXFLoader:
                     DXFLoader._store_geom(geom_list, LinearRing(path))
                 else:
                     DXFLoader._store_geom(geom_list, LineString(path))
+            elif e.dxftype() == 'SPLINE':
+                if e.dxf.degree != 3:
+                    raise Exception('Only cubic splines are implemented.')
+                if e.dxf.n_control_points != 4:
+                    raise Exception('Only 4 control points splines are implemented.')
+                if e.closed:
+                    raise Exception('Only open splines are implemented.')
+                path = spline2lines(np.array(e.control_points)[:,:2])
+                DXFLoader._store_geom(geom_list, LineString(path.transpose()))
             else:
                 raise Exception('unimplemented \"'+e.dxftype()+'\" dxf entity.')
 
