@@ -106,13 +106,10 @@ class JobItemWidget(QtGui.QGroupBox):
         layout.addWidget(self.set_state_btn, 3, 0)
         layout.addWidget(self.index_spbox, 3, 1)
         layout.addWidget(self.state_spbox, 3, 2)
-        layout.setColumnStretch(0, 1)
         self.setLayout(layout)
 
         self.del_btn.clicked.connect(self.on_delete)
         self.param_btn.clicked.connect(self.on_param_open)
-        # self.params_dialog.rejected.connect(self.on_param_canceled)
-        # self.params_dialog.finished.connect(self.on_param_closed)
 
         self.job.param_update.connect(self.on_param_update)
         self.on_param_update()
@@ -140,6 +137,9 @@ class JobItemWidget(QtGui.QGroupBox):
     def on_delete(self):
         self.job_manager.remove_job(self.job)
 
+    def minimumSizeHint(self):
+        return QtCore.QSize(300, 160)
+
 class JobListWidget(QtGui.QListWidget):
     mov = QtCore.pyqtSignal()
     def __init__(self):
@@ -160,6 +160,9 @@ class JobListWidget(QtGui.QListWidget):
     def remove(self, widget):
         row = self.row(widget._item)
         self.takeItem(row)
+
+    def minimumSizeHint(self):
+        return QtCore.QSize(300, 165)
 
 class JobGUI():
     def __init__(self, job_manager):

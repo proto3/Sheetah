@@ -9,28 +9,24 @@ from klippercontroller import KlipperController, KlipperControllerUI
 from postprocessor import PostProcessor
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, graphicview, sidebar, console, *args, **kwargs):
-        super(MainWindow, self).__init__(*args, **kwargs)
+    def __init__(self, graphicview, sidebar, console):
+        super().__init__()
         self.setWindowTitle("Sheetah")
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QGridLayout()
-        layout.addWidget(graphicview, 0, 0)
-        layout.addWidget(console, 1, 0, 1, 2)
+        layout.addWidget(graphicview, 0, 0, 2, 1)
+        layout.addWidget(console, 1, 1)
         layout.addWidget(sidebar, 0, 1)
-        layout.setRowStretch(0, 2)
         widget.setLayout(layout)
         self.setCentralWidget(widget)
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication([])
+
     pg.setConfigOption('antialias', True)
-
-    # pg.setConfigOption('background', 0.1)
-    # pg.setConfigOption('foreground', 'w')
-    # app.setStyleSheet(open('style/darkorange.stylesheet').read())
-
-    pg.setConfigOption('background', 'w')
-    pg.setConfigOption('foreground', 'k')
+    pg.setConfigOption('background', 0.1)
+    pg.setConfigOption('foreground', 'w')
+    app.setStyleSheet(open('style/darkorange.stylesheet').read())
 
     job_manager = JobManager()
     job_gui = JobGUI(job_manager)

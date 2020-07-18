@@ -175,8 +175,8 @@ class KlipperControllerUI(ControllerUIBase):
     def __init__(self, controller):
         super().__init__(controller)
         self.thc_graph = THCWidget(self.controller.thc_logger)
-        layout = QtWidgets.QHBoxLayout()
-        layout.addWidget(self.console)
-        layout.addWidget(self.btn_box)
-        layout.addWidget(self.thc_graph)
+        layout = QtWidgets.QGridLayout()
+        layout.addWidget(self.btn_box, 0, 0)
+        layout.addWidget(self.thc_graph, 0, 1)
+        layout.addWidget(self.console, 1, 0, 1, 2)
         self.setLayout(layout)
