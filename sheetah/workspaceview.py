@@ -62,6 +62,9 @@ class JobVisual:
 class VideoThread(QtCore.QThread):
     frame_available = QtCore.pyqtSignal()
     def run(self):
+        self.frame = np.zeros(shape=(810, 1200, 3), dtype=np.uint8) + 50
+        self.frame_available.emit()
+        return
         cap = cv2.VideoCapture(0)
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
@@ -84,7 +87,7 @@ class VideoThread(QtCore.QThread):
                 canny = cv2.cvtColor(aaa, cv2.COLOR_GRAY2RGB)
                 canny = cv2.convertScaleAbs(canny, alpha=0.05, beta=0)
                 frame = colored + canny
-                frame = cv2.resize(frame, (1320, 900))
+                frame = cv2.resize(frame, (1200, 810))
 
                 # frame = cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
                 # blurred = cv2.GaussianBlur(src, (3,3), 0)
@@ -96,7 +99,6 @@ class VideoThread(QtCore.QThread):
                 # blurred = cv2.medianBlur(src, 5)
                 # blurred = cv2.bilateralFilter(src, 7, 50, 50)
                 self.frame = frame
-
                 self.frame_available.emit()
 
 class WorkspaceViewWidget(pg.PlotWidget): #GraphicsView
@@ -109,7 +111,7 @@ class WorkspaceViewWidget(pg.PlotWidget): #GraphicsView
         self.video_thread.start()
 
         self.setAspectLocked()
-        self.msize = (900, 1320)
+        self.msize = (810, 1200)
         self.workspace = pg.PlotCurveItem([0, self.msize[0], self.msize[0], 0, 0],
                                       [0, 0, self.msize[1], self.msize[1], 0],
                                       pen=pg.mkPen(color=(239, 67, 15), width=1))

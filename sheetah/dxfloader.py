@@ -113,7 +113,8 @@ class DXFLoader:
                         b = points[0][:2]
                         bulge = points[-1][4]
                         path = np.vstack((path[:-1], bulge2lines(a, b, bulge)))
-                    DXFLoader._store_geom(geom_list, LinearRing(path))
+                    if path.size > 0:
+                        DXFLoader._store_geom(geom_list, LinearRing(path))
                 else:
                     DXFLoader._store_geom(geom_list, LineString(path))
             elif e.dxftype() == 'SPLINE':
