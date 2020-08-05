@@ -24,7 +24,7 @@ class PostProcessor:
         else:
             gcode += ['G91', 'G1 Z3.8', 'M3', 'G4 P' + str(job.pierce_delay),
             'G1 Z-2.3', 'G90',
-            'M6 V' + '{:.2f}'.format(job.arc_voltage) + ' T1800']
+            'M6 V' + '{:.2f}'.format(job.arc_voltage) + ' T' + '{:.0f}'.format(job.feedrate * 0.9)]
         gcode += ['G1 F' + str(job.feedrate)]
         for x,y in cut_path.transpose()[1:]:
             gcode += ['G1 X' + '{:.3f}'.format(x) + ' Y' + '{:.3f}'.format(y)]
