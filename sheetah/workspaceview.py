@@ -18,7 +18,7 @@ class JobVisual:
         self.ignored_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(100, 100, 100), width=2))
 
         pos = self.job.position
-        size = np.maximum(self.job.get_size(), np.array([10, 10]))
+        size = self.job.get_size()
         self.roi = pg.ROI(pos=pos, size=size, pen=pg.mkPen(color=(255,255,255,20)))
         self.roi.addRotateHandle([0, 0], [0.5, 0.5])
         self.job.shape_update.connect(self.on_job_shape_update)
@@ -120,10 +120,10 @@ class WorkspaceViewWidget(pg.PlotWidget): #GraphicsView
 
     def add_job_visual(self, visual):
         self.addItem(visual.todo_curve)
-        self.addItem(visual.running_curve)
-        self.addItem(visual.done_curve)
-        self.addItem(visual.failed_curve)
-        self.addItem(visual.ignored_curve)
+        # self.addItem(visual.running_curve)
+        # self.addItem(visual.done_curve)
+        # self.addItem(visual.failed_curve)
+        # self.addItem(visual.ignored_curve)
         self.addItem(visual.part_curve)
         self.addItem(visual.roi)
 

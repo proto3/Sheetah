@@ -4,10 +4,10 @@ from PyQt5 import QtCore, QtWidgets
 from abc import ABC, abstractmethod
 import regex as re
 import queue
-from jobmodel import JobModel
+from job import Job
 
 from PyQt5 import QtGui
-from jobmodel import Task
+from job import Task
 
 class InputDecisionTree:
     def __init__(self, default_function=None):
@@ -85,8 +85,8 @@ class ControllerBase(ABC):
     START = 1
     STOP  = 2
     ABORT = 3
-    def __init__(self, job_manager, post_processor):
-        self.job_manager = job_manager
+    def __init__(self, project, post_processor):
+        self.project = project
         self.post_processor = post_processor
         self.input_parser = InputDecisionTree()
         self.cmd_it = None

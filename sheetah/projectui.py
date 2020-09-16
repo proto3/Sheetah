@@ -53,6 +53,13 @@ class JobParamDialog(QtWidgets.QDialog):
         self.kerf_width_spbox.setSuffix("mm")
         form.addRow("Kerf width",self.kerf_width_spbox)
 
+        self.loop_radius_spbox = QtGui.QDoubleSpinBox()
+        self.loop_radius_spbox.setRange(0, 50)
+        self.loop_radius_spbox.setValue(self.job.loop_radius)
+        self.loop_radius_spbox.setSingleStep(0.1)
+        self.loop_radius_spbox.setSuffix("mm")
+        form.addRow("Loop radius",self.loop_radius_spbox)
+
         layout = QtGui.QVBoxLayout()
         layout.addWidget(name_label)
         layout.addLayout(form)
@@ -65,19 +72,29 @@ class JobParamDialog(QtWidgets.QDialog):
         self.arc_voltage_spbox.setValue(self.job.arc_voltage)
         self.pierce_delay_spbox.setValue(self.job.pierce_delay)
         self.kerf_width_spbox.setValue(self.job.kerf_width)
+        self.loop_radius_spbox.setValue(self.job.loop_radius)
 
     def accept(self):
+        # TODO ugly way to avoid multiple signals (break encapsulation)
+        self.job.blockSignals(True)
+
         self.job.exterior_clockwise = self.cut_direction_checkbox.isChecked()
         self.job.feedrate = self.feedrate_spbox.value()
         self.job.arc_voltage = self.arc_voltage_spbox.value()
         self.job.pierce_delay = self.pierce_delay_spbox.value()
         self.job.kerf_width = self.kerf_width_spbox.value()
+        self.job.loop_radius = self.loop_radius_spbox.value()
+
+        self.job.blockSignals(False)
+        self.job.shape_update.emit()
+        self.job.param_update.emit()
+
         super().accept()
 
 class JobItemWidget(QtGui.QGroupBox):
-    def __init__(self, job_manager, job):
+    def __init__(self, project, job):
         super().__init__()
-        self.job_manager = job_manager
+        self.project = project
         self.job = job
 
         self.name_label = QtGui.QLabel(job.name, alignment=QtCore.Qt.AlignCenter)
@@ -135,7 +152,7 @@ class JobItemWidget(QtGui.QGroupBox):
         self.params_dialog.exec_()
 
     def on_delete(self):
-        self.job_manager.remove_job(self.job)
+        self.project.remove_job(self.job)
 
     def minimumSizeHint(self):
         return QtCore.QSize(300, 160)
@@ -164,10 +181,10 @@ class JobListWidget(QtGui.QListWidget):
     def minimumSizeHint(self):
         return QtCore.QSize(300, 165)
 
-class JobGUI():
-    def __init__(self, job_manager):
+class ProjectUI():
+    def __init__(self, project):
         super().__init__()
-        self.job_manager = job_manager
+        self.project = project
         self.jobs = [[], [], []]
 
         self.graphic_w = WorkspaceViewWidget()
@@ -182,30 +199,28 @@ class JobGUI():
         self.sidebar_w.setLayout(layout)
 
         self.load_btn.clicked.connect(self.on_load)
-        self.job_manager.update.connect(self.on_job_list_update)
+        self.project.update.connect(self.on_project_update)
 
     def on_load(self):
-        filename, _ = QtGui.QFileDialog.getOpenFileName(self.sidebar_w,
+        filepath, _ = QtGui.QFileDialog.getOpenFileName(self.sidebar_w,
                       'Open File', QtCore.QDir.currentPath(),
                       'DXF (*.dxf);; All Files (*)')
-        if filename:
-            self.job_manager.load_job(filename)
+        if filepath:
+            self.project.load_job_file(filepath)
 
-    def on_job_list_update(self):
+    def on_project_update(self):
         for idx, job in enumerate(self.jobs[0]):
-            if job not in self.job_manager.job_list:
+            if job not in self.project.job_list:
                 self.list_w.remove(self.jobs[1][idx])
                 self.graphic_w.remove_job_visual(self.jobs[2][idx])
                 for l in self.jobs:
                     l.pop(idx)
-        for job in self.job_manager.job_list:
+        for job in self.project.job_list:
             if job not in self.jobs[0]:
-                jobitem = JobItemWidget(self.job_manager, job)
+                jobitem = JobItemWidget(self.project, job)
                 jobvisual = JobVisual(job)
-
                 self.jobs[0].append(job)
                 self.jobs[1].append(jobitem)
                 self.jobs[2].append(jobvisual)
-
                 self.list_w.append(jobitem)
                 self.graphic_w.add_job_visual(jobvisual)

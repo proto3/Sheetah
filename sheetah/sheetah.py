@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from PyQt5 import QtCore, QtWidgets
+from PyQt5 import QtWidgets
 import pyqtgraph as pg
 
-from jobmodel import JobManager
-from jobui import JobGUI
+from project import Project
+from projectui import ProjectUI
 from klippercontroller import KlipperController, KlipperControllerUI
 from postprocessor import PostProcessor
 
@@ -22,22 +22,24 @@ class MainWindow(QtWidgets.QMainWindow):
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication([])
+    app.setStyleSheet(open('style/darkorange.stylesheet').read())
 
     pg.setConfigOption('antialias', True)
     pg.setConfigOption('background', 0.1)
     pg.setConfigOption('foreground', 'w')
-    app.setStyleSheet(open('style/darkorange.stylesheet').read())
 
-    job_manager = JobManager()
-    job_gui = JobGUI(job_manager)
+    project = Project()
+    project_ui = ProjectUI(project)
 
     post_processor = PostProcessor()
-    kc = KlipperController(job_manager, post_processor)
-    kcw = KlipperControllerUI(kc)
-    kc.connect('/tmp/printer')
+    controller = KlipperController(project, post_processor)
+    controller_ui = KlipperControllerUI(controller)
+    controller.connect('/tmp/printer')
 
-    mw = MainWindow(job_gui.graphic_w, job_gui.sidebar_w, kcw)
-    mw.show()
-    kcw.console.user_input_w.setFocus()
+    main_window = MainWindow(project_ui.graphic_w,
+                             project_ui.sidebar_w,
+                             controller_ui)
+    main_window.show()
+    controller_ui.console.user_input_w.setFocus()
 
     app.exec_()

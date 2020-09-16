@@ -19,8 +19,8 @@ class QTHCLogger(QtCore.QObject):
         self.thc_update.emit()
 
 class KlipperController(ControllerBase):
-    def __init__(self, job_manager, post_processor):
-        super().__init__(job_manager, post_processor)
+    def __init__(self, project, post_processor):
+        super().__init__(project, post_processor)
         self.serial = serial.Serial()
         self.klipper_busy = False
         self.thc_logger = QTHCLogger()
@@ -140,7 +140,7 @@ class KlipperController(ControllerBase):
 
                 if self.action == self.START:
                     self.action = self.NONE
-                    self.task_list = self.job_manager.generate_tasks(self.post_processor, self.dry_run)
+                    self.task_list = self.project.generate_tasks(self.post_processor, self.dry_run)
                     try:
                         self.current_task = self.task_list.pop(0)
                     except:

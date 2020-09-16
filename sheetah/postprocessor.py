@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-from jobmodel import Task, JobTask
+from job import Task, JobTask
 
 class PostProcessor:
     def __init__(self):
