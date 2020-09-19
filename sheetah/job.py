@@ -129,13 +129,11 @@ class Job(QtCore.QObject):
         self.offset_node  = PipelineNode(self._apply_offset, self.scale_node)
         self.lead_node    = PipelineNode(self._apply_lead, self.offset_node)
         self.loop_node    = PipelineNode(self._apply_loop, self.lead_node)
-        self.cut_aff_node = PipelineNode(self._apply_affine, self.loop_node)
+        self.cut_gen_node  = PipelineNode(self._generate, self.loop_node)
+        self.part_gen_node = PipelineNode(self._generate, self.scale_node)
+        self.cut_aff_node = PipelineNode(self._apply_affine, self.cut_gen_node)
+        self.part_aff_node = PipelineNode(self._apply_affine, self.part_gen_node)
         # self.gcode_node   = PipelineNode(self._to_gcode, self.cut_aff_node)
-
-        # diplay nodes (TODO move to GPU)
-        self.part_aff_node = PipelineNode(self._apply_affine, self.scale_node)
-        self.cut_gen_node  = PipelineNode(self._generate, self.cut_aff_node)
-        self.part_gen_node = PipelineNode(self._generate, self.part_aff_node)
 
         self.cut_count = 0
         self.lead_pos = [0.] * self.cut_count
@@ -273,10 +271,10 @@ class Job(QtCore.QObject):
         return self.cut_count
 
     def get_part_arrays(self):
-        return self.part_gen_node.data
+        return self.part_aff_node.data
 
     def get_cut_arrays(self):
-        return self.cut_gen_node.data
+        return self.cut_aff_node.data
 
     def _apply_direction(self, polylines):
         directed_polylines = []
@@ -317,15 +315,15 @@ class Job(QtCore.QObject):
         return [p.to_lines() for p in polylines]
 
     def _apply_affine(self, polylines):
-        return [p.affine(self._position, self._angle, 1) for p in polylines]
+        # prepare transform matrix
+        r_rad = self._angle / 180 * math.pi
+        cos = math.cos(r_rad)
+        sin = math.sin(r_rad)
+        tr_mat = np.array([[cos,-sin, self._position[0]],
+        [sin, cos, self._position[1]],
+        [  0,   0,                1]])
+        # for generated lines
+        return [np.dot(tr_mat, np.insert(arr, 2, 1., axis=0))[:-1]
+        for arr in polylines]
 
-        # # prepare transform matrix
-        # r_rad = self._angle / 180 * math.pi
-        # cos = math.cos(r_rad)
-        # sin = math.sin(r_rad)
-        # tr_mat = np.array([[cos,-sin, self._position[0]],
-        #                    [sin, cos, self._position[1]],
-        #                    [  0,   0,                1]])
-        # # for generated lines
-        # return [np.dot(tr_mat, np.insert(arr, 2, 1., axis=0))[:-1]
-        #        for arr in polylines]
+        # return [p.affine(self._position, self._angle, 1) for p in polylines]

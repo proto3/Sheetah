@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from PyQt5 import QtCore, QtGui, QtWidgets
-from workspaceview import WorkspaceViewWidget, JobVisual
+from workspaceview import WorkspaceView, JobVisual
 
 class JobParamDialog(QtWidgets.QDialog):
     def __init__(self, job, parent=None):
@@ -185,9 +185,9 @@ class ProjectUI():
     def __init__(self, project):
         super().__init__()
         self.project = project
-        self.jobs = [[], [], []]
+        self.jobs = [[], []]
 
-        self.graphic_w = WorkspaceViewWidget()
+        self.graphic_w = QtGui.QWidget() # WorkspaceView()
 
         self.sidebar_w = QtGui.QWidget()
         self.list_w = JobListWidget()
@@ -199,28 +199,24 @@ class ProjectUI():
         self.sidebar_w.setLayout(layout)
 
         self.load_btn.clicked.connect(self.on_load)
-        self.project.update.connect(self.on_project_update)
+        self.project.job_update.connect(self.on_project_update)
 
     def on_load(self):
         filepath, _ = QtGui.QFileDialog.getOpenFileName(self.sidebar_w,
                       'Open File', QtCore.QDir.currentPath(),
                       'DXF (*.dxf);; All Files (*)')
         if filepath:
-            self.project.load_job_file(filepath)
+            self.project.load_job(filepath)
 
     def on_project_update(self):
         for idx, job in enumerate(self.jobs[0]):
-            if job not in self.project.job_list:
+            if job not in self.project.jobs:
                 self.list_w.remove(self.jobs[1][idx])
-                self.graphic_w.remove_job_visual(self.jobs[2][idx])
                 for l in self.jobs:
                     l.pop(idx)
-        for job in self.project.job_list:
+        for job in self.project.jobs:
             if job not in self.jobs[0]:
                 jobitem = JobItemWidget(self.project, job)
-                jobvisual = JobVisual(job)
                 self.jobs[0].append(job)
                 self.jobs[1].append(jobitem)
-                self.jobs[2].append(jobvisual)
                 self.list_w.append(jobitem)
-                self.graphic_w.add_job_visual(jobvisual)
