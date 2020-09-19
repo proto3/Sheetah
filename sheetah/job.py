@@ -167,6 +167,17 @@ class Job(QtCore.QObject):
         self.part_aff_node.notify_change()
         self.shape_update.emit()
 
+    def turn_around(self, center, angle):
+        x, y = center
+        rad = angle / 180 * math.pi
+        cos = math.cos(rad)
+        sin = math.sin(rad)
+        tr_mat = np.array([[cos, -sin, x - x*cos + y*sin],
+                           [sin,  cos, y - x*sin - y*cos],
+                           [  0,    0,                1]])
+        self.position = np.dot(tr_mat, np.append(self.position, 1))[:-1]
+        self.angle += angle
+
     @property
     def scale(self):
         return self._scale
@@ -175,6 +186,18 @@ class Job(QtCore.QObject):
         self._scale = s
         self.scale_node.notify_change()
         self.shape_update.emit()
+
+    # def scale_around(self, center, angle):
+    #     # print(center, angle)
+    #     x, y = center
+    #     rad = angle / 180 * math.pi
+    #     cos = math.cos(rad)
+    #     sin = math.sin(rad)
+    #     tr_mat = np.array([[cos, -sin, x - x*cos + y*sin],
+    #                        [sin,  cos, y - x*sin - y*cos],
+    #                        [  0,    0,                1]])
+    #     self.position = np.dot(tr_mat, np.append(self.position, 1))[:-1]
+    #     self.angle += angle
 
     @property
     def exterior_clockwise(self):
@@ -267,6 +290,18 @@ class Job(QtCore.QObject):
         bounds = self.get_bounds()
         return bounds[1] - bounds[0]
 
+    def get_centroid(self):
+        rel_centroid = self.scale_node.data[-1].centroid
+
+        # TODO store tr_mat and modify in set pos and set angle
+        r_rad = self._angle / 180 * math.pi
+        cos = math.cos(r_rad)
+        sin = math.sin(r_rad)
+        tr_mat = np.array([[cos,-sin, self._position[0]],
+                           [sin, cos, self._position[1]],
+                           [  0,   0,                1]])
+        return np.dot(tr_mat, np.append(rel_centroid, 1.))[:-1]
+
     def get_cut_count(self):
         return self.cut_count
 
@@ -320,8 +355,8 @@ class Job(QtCore.QObject):
         cos = math.cos(r_rad)
         sin = math.sin(r_rad)
         tr_mat = np.array([[cos,-sin, self._position[0]],
-        [sin, cos, self._position[1]],
-        [  0,   0,                1]])
+                           [sin, cos, self._position[1]],
+                           [  0,   0,                1]])
         # for generated lines
         return [np.dot(tr_mat, np.insert(arr, 2, 1., axis=0))[:-1]
         for arr in polylines]

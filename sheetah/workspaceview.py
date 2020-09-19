@@ -7,37 +7,27 @@ import pyqtgraph as pg
 import numpy as np
 import cv2, math
 
-class MyQGraphicsPathItem(QGraphicsPathItem):
-    def __init__(self, drag_callback):
+class DragQGraphicsPathItem(QGraphicsPathItem):
+    def __init__(self, drag_cb):
         super().__init__()
-        self.dragging = False
-        self.prev_pos = pg.Point(0,0)
-        self.drag_callback = drag_callback
+        self.drag_cb = drag_cb
 
     def mouseDragEvent(self, ev, axis=None):
         if ev.button() & Qt.LeftButton:
+            self.drag_cb(ev)
             ev.accept()
-            if ev.isFinish():
-                self.dragging = False
-            else:
-                if not self.dragging:
-                    self.prev_pos = ev.buttonDownPos(ev.button())
-                self.dragging = True
-            self.drag_callback(ev.pos() - self.prev_pos)
-            self.prev_pos = ev.pos()
 
 class JobVisual:
-    def __init__(self, job, job_drag_callback):
+    def __init__(self, job, job_drag_cb):
         self.job = job
-        self.job_drag_callback = job_drag_callback
+        self.job_drag_cb = job_drag_cb
 
-        self.part_poly = MyQGraphicsPathItem(self.drag_callback)
+        self.part_poly = DragQGraphicsPathItem(self.drag_cb)
         self.part_poly.setPen(QPen(Qt.green, 0, Qt.NoPen))
-        # self.part_poly.setBrush(pg.mkBrush(color=(4, 150, 255, 95)))
-        self.part_poly.setBrush(pg.mkBrush(color=(65, 220, 10, 95)))
+        self.part_poly.setBrush(pg.mkBrush(color=(4, 150, 255, 95)))
+        # self.part_poly.setBrush(pg.mkBrush(color=(65, 220, 10, 95)))
 
-
-        self.cut_pen = QPen(Qt.white, 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+        self.cut_pen = QPen(Qt.white, job.kerf_width, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         self.todo_curve = QGraphicsPathItem()
         self.todo_curve.setPen(self.cut_pen)
 
@@ -46,20 +36,18 @@ class JobVisual:
         self.failed_curve  = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(255,   0,   0), width=2))
         self.ignored_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(100, 100, 100), width=2))
 
-        # pos = self.job.position
-        # size = self.job.get_size()
         self.job.shape_update.connect(self.on_job_shape_update)
         self.on_job_shape_update()
 
-    def drag_callback(self, vec):
-        if not vec.isNull():
-            self.job_drag_callback(self.job, vec)
+    def drag_cb(self, ev):
+        self.job_drag_cb(self.job, ev)
 
     def set_selected(self, selected):
         if selected:
             self.part_poly.setBrush(pg.mkBrush(color=(200, 200, 0, 95)))
         else:
-            self.part_poly.setBrush(pg.mkBrush(color=(65, 220, 10, 95)))
+            self.part_poly.setBrush(pg.mkBrush(color=(4, 150, 255, 95)))
+            # self.part_poly.setBrush(pg.mkBrush(color=(65, 220, 10, 95)))
 
     def on_job_shape_update(self):
         connect = np.empty(0, dtype=np.bool)
@@ -72,7 +60,6 @@ class JobVisual:
             data = np.concatenate((data, arr), axis=1)
 
         self.part_poly.setPath(pg.arrayToQPath(data[0], data[1], connect))
-        # self.part_poly.setData(data[0], data[1], connect=connect)
 
         connect = [np.empty(0, dtype=np.bool) for i in range(5)]
         data = [np.empty((2,0), dtype=np.float) for i in range(5)]
@@ -85,7 +72,6 @@ class JobVisual:
 
         self.cut_pen.setWidthF(self.job.kerf_width)
         self.todo_curve.setPen(self.cut_pen)
-        # self.todo_curve.setData(data[0][0], data[0][1], connect=connect[0])
         self.todo_curve.setPath(pg.arrayToQPath(data[0][0], data[0][1], connect[0]))
 
         self.running_curve.setData(data[1][0], data[1][1], connect=connect[1])
@@ -134,7 +120,7 @@ class VideoThread(QThread):
                 self.frame_available.emit()
 
 class MyViewBox(pg.ViewBox):
-    def __init__(self, press_callback, **kwargs):
+    def __init__(self, press_cb, **kwargs):
         super().__init__(**kwargs)
         ## Make select box that is shown when dragging on the view
         self.rbSelectBox = QGraphicsRectItem(0, 0, 1, 1)
@@ -144,7 +130,7 @@ class MyViewBox(pg.ViewBox):
         self.rbSelectBox.hide()
         self.addItem(self.rbSelectBox, ignoreBounds=True)
 
-        self.press_callback = press_callback
+        self.press_cb = press_cb
 
     def updateSelectBox(self, p1, p2):
         r = QRectF(p1, p2)
@@ -155,7 +141,7 @@ class MyViewBox(pg.ViewBox):
         self.rbSelectBox.show()
 
     def mousePressEvent(self, ev, axis=None):
-        self.press_callback(self.mapToView(ev.pos()))
+        self.press_cb(ev.button(), self.mapToView(ev.pos()))
         ev.ignore()
 
     def mouseDragEvent(self, ev, axis=None):
@@ -167,32 +153,23 @@ class MyViewBox(pg.ViewBox):
                 ax = QRectF(pg.Point(ev.buttonDownPos(ev.button())), pg.Point(pos))
                 ax = self.childGroup.mapRectFromParent(ax)
                 self.selection_ballback(ax)
-            else:
-                ## update shape of select box
+            else: ## update shape of select box
                 self.updateSelectBox(ev.buttonDownPos(), ev.pos())
         elif ev.button() & Qt.MidButton:
             pg.ViewBox.mouseDragEvent(self, ev, axis)
 
-    def set_selection_callback(self, callback):
-        self.selection_ballback = callback
-
-
-# Workspace(project)
-#
-# Workspace:
-#     event_handler
-#     WorkspaceWidget(event_manager)
-
+    def set_selection_cb(self, cb):
+        self.selection_ballback = cb
 
 class WorkspaceView(pg.PlotWidget):
     def __init__(self, project):
-        super().__init__(plotItem=pg.PlotItem(viewBox=MyViewBox(self.press_callback)))
+        super().__init__(plotItem=pg.PlotItem(viewBox=MyViewBox(self.press_cb)))
         self.plotItem.hideAxis('left')
         self.plotItem.hideAxis('bottom')
 
         self.project = project
 
-        self.getPlotItem().getViewBox().set_selection_callback(self.rect_selection)
+        self.getPlotItem().getViewBox().set_selection_cb(self.rect_selection)
 
         use_opengl = True
         enable_antialiasing = True
@@ -229,14 +206,20 @@ class WorkspaceView(pg.PlotWidget):
 
         self.jobs = [[],[]]
 
-    def press_callback(self, pos):
-        for i, jobvis in enumerate(self.jobs[1]):
-            if jobvis.part_poly.path().contains(pos):
-                job = self.jobs[0][i]
-                if not job in self.project.selection:
-                    self.project.selection = set([job])
-                return
-        self.project.selection = set()
+        self.dragging = False
+
+    def press_cb(self, button, pos):
+        if button & (Qt.RightButton | Qt.LeftButton):
+            for i, jobvis in enumerate(self.jobs[1]):
+                if jobvis.part_poly.path().contains(pos):
+                    job = self.jobs[0][i]
+                    if not job in self.project.selection:
+                        self.project.selection = set([job])
+                    if button & Qt.RightButton:
+                        print('menu')
+
+                    return
+            self.project.selection = set()
 
     def rect_selection(self, rect):
         selection = set()
@@ -245,8 +228,53 @@ class WorkspaceView(pg.PlotWidget):
                 selection.add(self.jobs[0][i])
         self.project.selection = selection
 
-    def job_drag_callback(self, job, vec):
-        self.project.step_mov_selection(vec)
+    def selection_center(self):
+        centroids = []
+        for job in self.project.selection:
+            centroids.append(job.get_centroid())
+        centroids = np.array(centroids).T
+        return np.mean(centroids, axis=1)
+
+    def job_drag_cb(self, job, ev):
+        mode = 'translate'
+        if mode == 'translate':
+            if ev.isFinish(): # end drag
+                self.dragging = False
+                self.project.finish_drag_selection()
+            elif not self.dragging: # start drag
+                self.prev_pos = ev.buttonDownPos(ev.button())
+                self.dragging = True
+            mov = ev.pos() - self.prev_pos
+            self.prev_pos = ev.pos()
+            if not mov.isNull():
+                self.project.step_mov_selection(mov)
+        elif mode == 'rotate':
+            if ev.isFinish(): # end drag
+                self.dragging = False
+                self.project.finish_drag_selection()
+            elif not self.dragging: # start drag
+                self.dragging = True
+                self.center = self.selection_center()
+                dir_ini = ev.buttonDownPos(ev.button()) - self.center
+                self.prev_angle = math.atan2(dir_ini.y(), dir_ini.x())
+            dir = ev.pos() - self.center
+            angle = math.atan2(dir.y(), dir.x())
+            angle_diff = angle - self.prev_angle
+            if angle_diff != 0.:
+                self.project.step_rot_selection(self.center, angle_diff * 180 / math.pi)
+                self.prev_angle = angle
+        else: # if mode == 'scale':
+            pass
+            # if ev.isFinish(): # end drag
+            #     self.dragging = False
+            #     self.project.finish_drag_selection()
+            # elif not self.dragging: # start drag
+            #     self.prev_pos = ev.buttonDownPos(ev.button())
+            #     self.dragging = True
+            # mov = ev.pos() - self.prev_pos
+            # self.prev_pos = ev.pos()
+            # if not mov.isNull():
+            #     self.project.step_mov_selection(mov)
 
     def on_job_update(self):
         for i, job in enumerate(self.jobs[0]):
@@ -256,7 +284,7 @@ class WorkspaceView(pg.PlotWidget):
                     l.pop(i)
         for job in self.project.jobs:
             if job not in self.jobs[0]:
-                jobvisual = JobVisual(job, self.job_drag_callback)
+                jobvisual = JobVisual(job, self.job_drag_cb)
                 self.jobs[0].append(job)
                 self.jobs[1].append(jobvisual)
                 self.add_job_visual(jobvisual)
@@ -285,58 +313,3 @@ class WorkspaceView(pg.PlotWidget):
         # self.scene.removeItem(visual.ignored_curve)
         self.removeItem(visual.part_poly)
         # self.scene.removeItem(visual.roi)
-
-# class PlotWidget(pg.GraphicsView):
-#     sigRangeChanged = QtCore.Signal(object, object)
-#     sigTransformChanged = QtCore.Signal(object)
-#
-#     def __init__(self, parent=None, background='default', plotItem=None, **kargs):
-#         GraphicsView.__init__(self, parent, background=background)
-#         self.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Expanding)
-#         self.enableMouse(False)
-#         if plotItem is None:
-#             self.plotItem = PlotItem(**kargs)
-#         else:
-#             self.plotItem = plotItem
-#         self.setCentralItem(self.plotItem)
-#         ## Explicitly wrap methods from plotItem
-#         ## NOTE: If you change this list, update the documentation above as well.
-#         for m in ['addItem', 'removeItem', 'autoRange', 'clear', 'setAxisItems', 'setXRange',
-#                   'setYRange', 'setRange', 'setAspectLocked', 'setMouseEnabled',
-#                   'setXLink', 'setYLink', 'enableAutoRange', 'disableAutoRange',
-#                   'setLimits', 'register', 'unregister', 'viewRect']:
-#             setattr(self, m, getattr(self.plotItem, m))
-#         #QtCore.QObject.connect(self.plotItem, QtCore.SIGNAL('viewChanged'), self.viewChanged)
-#         self.plotItem.sigRangeChanged.connect(self.viewRangeChanged)
-#
-#     def close(self):
-#         self.plotItem.close()
-#         self.plotItem = None
-#         #self.scene().clear()
-#         #self.mPlotItem.close()
-#         self.setParent(None)
-#         super(PlotWidget, self).close()
-#
-#     def __getattr__(self, attr):  ## implicitly wrap methods from plotItem
-#         if hasattr(self.plotItem, attr):
-#             m = getattr(self.plotItem, attr)
-#             if hasattr(m, '__call__'):
-#                 return m
-#         raise AttributeError(attr)
-#
-#     def viewRangeChanged(self, view, range):
-#         #self.emit(QtCore.SIGNAL('viewChanged'), *args)
-#         self.sigRangeChanged.emit(self, range)
-#
-#     def widgetGroupInterface(self):
-#         return (None, PlotWidget.saveState, PlotWidget.restoreState)
-#
-#     def saveState(self):
-#         return self.plotItem.saveState()
-#
-#     def restoreState(self, state):
-#         return self.plotItem.restoreState(state)
-#
-#     def getPlotItem(self):
-#         """Return the PlotItem contained within."""
-#         return self.plotItem

@@ -121,6 +121,11 @@ class Polyline(PolylineInterface):
         self._update_cavc()
         return self._cavc_pline.get_extents()
 
+    @property
+    def centroid(self):
+        self._update_shapely()
+        return self._shapely.centroid
+
     def is_closed(self):
         return self._closed
 
