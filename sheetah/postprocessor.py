@@ -14,7 +14,7 @@ class PostProcessor:
         return Task(self._abort_seq)
 
     def generate(self, job, task_id, dry_run=False):
-        cut_path = job.get_cut_arrays()[task_id]
+        cut_path = job.get_cut_paths()[task_id]
         gcode = list()
         gcode = ['G90',
                  'G1 F6000 X' + '{:.3f}'.format(cut_path[0][0]) + ' Y' + '{:.3f}'.format(cut_path[1][0]),

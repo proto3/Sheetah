@@ -247,7 +247,7 @@ class ControllerUIBase(QtWidgets.QWidget):
         self.run_file_btn.clicked.connect(self.on_run_file)
 
         self.btn_box = QtWidgets.QGroupBox()
-        layout = QtWidgets.QVBoxLayout()
+        layout = QtWidgets.QHBoxLayout()
         layout.addWidget(self.dry_run_checker)
         layout.addWidget(self.run_btn)
         layout.addWidget(self.stop_btn)

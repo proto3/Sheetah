@@ -55,15 +55,15 @@ class JobTask(Task):
 
     def pop(self):
         if not self.dry_run and self.cmd_index == 0:
-            self.job.set_state(self.id, Job.RUNNING)
+            self.job.set_cut_state(self.id, Job.RUNNING)
         return super().pop()
 
     def close(self):
         if not self.dry_run:
             if self.cmd_index >= len(self.cmd_list):
-                self.job.set_state(self.id, Job.DONE)
+                self.job.set_cut_state(self.id, Job.DONE)
             else:
-                self.job.set_state(self.id, Job.FAILED)
+                self.job.set_cut_state(self.id, Job.FAILED)
         super().close()
 
 class PipelineNode:
@@ -71,6 +71,13 @@ class PipelineNode:
         self.fun = fun
         self.parent = parent
         self.up_to_date = False
+        self.children = []
+
+        if self.parent is not None:
+            self.parent.register(self)
+
+    def register(self, child):
+        self.children.append(child)
 
     @property
     def data(self):
@@ -79,17 +86,17 @@ class PipelineNode:
 
     def notify_change(self):
         self.up_to_date = False
+        for child in self.children:
+            child.notify_change()
 
     def _update(self):
         if self.parent is None:
             return False
 
-        if self.parent._update() or not self.up_to_date:
+        if not self.up_to_date:
+            self.parent._update()
             self._data = self.fun(self.parent._data)
             self.up_to_date = True
-            return True
-        else:
-            return False
 
 class Job(QtCore.QObject):
     shape_update = QtCore.pyqtSignal()
@@ -161,22 +168,29 @@ class Job(QtCore.QObject):
         return self._angle
     @angle.setter
     def angle(self, a):
-        """Set job angle in degrees."""
+        """Set job angle in radians."""
         self._angle = a
         self.cut_aff_node.notify_change()
         self.part_aff_node.notify_change()
         self.shape_update.emit()
 
     def turn_around(self, center, angle):
-        x, y = center
-        rad = angle / 180 * math.pi
-        cos = math.cos(rad)
-        sin = math.sin(rad)
-        tr_mat = np.array([[cos, -sin, x - x*cos + y*sin],
-                           [sin,  cos, y - x*sin - y*cos],
-                           [  0,    0,                1]])
-        self.position = np.dot(tr_mat, np.append(self.position, 1))[:-1]
-        self.angle += angle
+        """Angle in radians."""
+        self._angle += angle
+        cos = math.cos(angle)
+        sin = math.sin(angle)
+        v = self.position - center
+        self._position = center + [v[0]*cos - v[1]*sin, v[0]*sin + v[1]*cos]
+        self.cut_aff_node.notify_change()
+        self.part_aff_node.notify_change()
+        self.shape_update.emit()
+
+    def pos_rot_matrix(self):
+        cos = math.cos(self._angle)
+        sin = math.sin(self._angle)
+        return np.array([[cos,-sin, self._position[0]],
+                         [sin, cos, self._position[1]],
+                         [  0,   0,                1]])
 
     @property
     def scale(self):
@@ -187,17 +201,14 @@ class Job(QtCore.QObject):
         self.scale_node.notify_change()
         self.shape_update.emit()
 
-    # def scale_around(self, center, angle):
-    #     # print(center, angle)
-    #     x, y = center
-    #     rad = angle / 180 * math.pi
-    #     cos = math.cos(rad)
-    #     sin = math.sin(rad)
-    #     tr_mat = np.array([[cos, -sin, x - x*cos + y*sin],
-    #                        [sin,  cos, y - x*sin - y*cos],
-    #                        [  0,    0,                1]])
-    #     self.position = np.dot(tr_mat, np.append(self.position, 1))[:-1]
-    #     self.angle += angle
+    def scale_around(self, center, scale):
+        self._scale *= scale
+        v = self.position - center
+        self._position = v * scale + center
+        self.scale_node.notify_change()
+        self.cut_aff_node.notify_change()
+        self.part_aff_node.notify_change()
+        self.shape_update.emit()
 
     @property
     def exterior_clockwise(self):
@@ -256,10 +267,7 @@ class Job(QtCore.QObject):
         self.lead_pos[index] = pos
         self.shape_update.emit()
 
-    def get_state(self, index):
-        return self.cut_state[index]
-
-    def set_state(self, index, state):
+    def set_cut_state(self, index, state):
         """Set state of a particular cut."""
         if state not in self._states:
             raise Exception('Unknown state ' + str(state) + '.')
@@ -267,7 +275,7 @@ class Job(QtCore.QObject):
         self.state_update.emit()
         self.shape_update.emit()
 
-    def state_index(self, state):
+    def cut_state_index(self, state):
         """Return index of the first cut matching state, -1 otherwise."""
         if state not in self._states:
             raise Exception('Unknown state ' + str(state) + '.')
@@ -277,7 +285,7 @@ class Job(QtCore.QObject):
             index = -1
         return index
 
-    def state_indices(self, state):
+    def cut_state_indices(self, state):
         """Return indices of cuts matching state."""
         if state not in self._states:
             raise Exception('Unknown state ' + str(state) + '.')
@@ -292,24 +300,16 @@ class Job(QtCore.QObject):
 
     def get_centroid(self):
         rel_centroid = self.scale_node.data[-1].centroid
-
-        # TODO store tr_mat and modify in set pos and set angle
-        r_rad = self._angle / 180 * math.pi
-        cos = math.cos(r_rad)
-        sin = math.sin(r_rad)
-        tr_mat = np.array([[cos,-sin, self._position[0]],
-                           [sin, cos, self._position[1]],
-                           [  0,   0,                1]])
-        return np.dot(tr_mat, np.append(rel_centroid, 1.))[:-1]
+        return np.dot(self.pos_rot_matrix(), np.append(rel_centroid, 1.))[:-1]
 
     def get_cut_count(self):
         return self.cut_count
 
-    def get_part_arrays(self):
+    def get_shape_paths(self):
         return self.part_aff_node.data
 
-    def get_cut_arrays(self):
-        return self.cut_aff_node.data
+    def get_cut_paths(self):
+        return (self.cut_aff_node.data, self.cut_state)
 
     def _apply_direction(self, polylines):
         directed_polylines = []
@@ -344,21 +344,12 @@ class Job(QtCore.QObject):
         return polylines
 
     def _apply_loop(self, polylines):
-        return [p.loop(120*math.pi/180, self.kerf_width / 2, self._loop_radius) for p in polylines]
+        return [p.loop(120*math.pi/180, self.kerf_width / 2, self._loop_radius)
+                for p in polylines]
 
     def _generate(self, polylines):
         return [p.to_lines() for p in polylines]
 
     def _apply_affine(self, polylines):
-        # prepare transform matrix
-        r_rad = self._angle / 180 * math.pi
-        cos = math.cos(r_rad)
-        sin = math.sin(r_rad)
-        tr_mat = np.array([[cos,-sin, self._position[0]],
-                           [sin, cos, self._position[1]],
-                           [  0,   0,                1]])
-        # for generated lines
-        return [np.dot(tr_mat, np.insert(arr, 2, 1., axis=0))[:-1]
-        for arr in polylines]
-
-        # return [p.affine(self._position, self._angle, 1) for p in polylines]
+        return [np.dot(self.pos_rot_matrix(), np.insert(p, 2, 1., axis=0))[:-1]
+                for p in polylines]
