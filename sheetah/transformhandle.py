@@ -38,22 +38,19 @@ class RotateHandle(QtWidgets.QGraphicsEllipseItem):
             print("rotate")
 
 class TransformHandle(QtWidgets.QGraphicsRectItem):
-    def __init__(self, project, scene):
-        super().__init__(0,0,0,0)
-        self.project = project
-
+    def __init__(self, controller):
+        super().__init__()
+        self.controller = controller
         pen = QtGui.QPen(QtGui.QColor(0,150,255))
         pen.setCosmetic(True)
         self.setPen(pen)
         self.setZValue(2)
-
         self.scale = ScaleHandle(self)
         self.rotate = RotateHandle(self)
-
-        scene.selectionChanged.connect(self.on_selection)
         self.hide()
 
-    def on_selection(self):
+    def update(self):
+        # TODO handle error scene == None ?
         if self.scene().selectedItems():
             group = self.scene().createItemGroup(self.scene().selectedItems())
             b_rect = group.boundingRect()

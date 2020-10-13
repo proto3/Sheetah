@@ -5,8 +5,7 @@ from pyqtgraph import arrayToQPath
 import numpy as np
 
 class JobVisual:
-    def __init__(self, project, job):
-        self.project = project
+    def __init__(self, controller, job):
         self.job = job
         cut_colors = [QtGui.QColor(255, 255, 255),
                       QtGui.QColor(250, 170,   0),
@@ -14,7 +13,7 @@ class JobVisual:
                       QtGui.QColor(255,   0,   0),
                       QtGui.QColor(100, 100, 100)]
         self.cut_item = GraphicsCutPathsItem(cut_colors)
-        self.part_item = GraphicsCutPartItem(project, job)
+        self.part_item = GraphicsCutPartItem(controller, job)
         self.job.shape_update.connect(self.on_job_shape_update)
         self.on_job_shape_update()
 
@@ -74,12 +73,11 @@ class GraphicsProxyItem(QtWidgets.QGraphicsItem):
         return self.parentItem().boundingRect()
 
 class GraphicsCutPartItem(QtWidgets.QGraphicsPathItem):
-    def __init__(self, project, job):
+    def __init__(self, controller, job):
         super().__init__()
-        self.project = project
+        self.controller = controller
         self.job = job
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable)
-        self.grab = False
 
         # self.selectBrush = QtGui.QBrush(QtGui.QColor(65, 220, 10, 95))
         self.selectBrush = QtGui.QBrush(QtGui.QColor(4, 200, 255, 200))
@@ -109,37 +107,11 @@ class GraphicsCutPartItem(QtWidgets.QGraphicsPathItem):
         self.params_dialog.reset_params()
         self.params_dialog.exec_()
 
-    def _start_grab(self):
-        self.grab = True
-        self.items = self.scene().selectedItems()
-        self.proxy_items = [GraphicsProxyItem(item) for item in self.items]
-
-    def _nominal_grab(self, pos):
-        if pos != self.prev_pos:
-            diff = pos - self.prev_pos
-            for item in self.proxy_items:
-                item.setPos(item.pos() + diff)
-            self.prev_pos = pos
-
-    def _end_grab(self):
-        for item in self.proxy_items:
-            self.scene().removeItem(item)
-        full_move = self.prev_pos - self.down_pos
-        full_move = np.array([full_move.x(), full_move.y()])
-        for item in self.items:
-            item.job.position += full_move
-        self.items = self.proxy_items = []
-
-        # TODO baaahhh...
-        self.scene().selectionChanged.emit()
-
     def _select_toggle(self):
         self.setSelected(not self.isSelected())
 
     def _select_exclusive(self):
-        self.scene().blockSignals(True)
         self.scene().clearSelection()
-        self.scene().blockSignals(False)
         self.setSelected(True)
 
     def contextMenuEvent(self, ev):
@@ -148,7 +120,7 @@ class GraphicsCutPartItem(QtWidgets.QGraphicsPathItem):
 
     def mousePressEvent(self, ev):
         if ev.button() & Qt.LeftButton:
-            self.down_pos = self.prev_pos = ev.scenePos()
+            self.down_pos = ev.scenePos()
             if ev.modifiers() & Qt.ShiftModifier:
                 self._select_toggle()
             elif not self.isSelected():
@@ -159,18 +131,17 @@ class GraphicsCutPartItem(QtWidgets.QGraphicsPathItem):
 
     def mouseReleaseEvent(self, ev):
         if ev.button() & Qt.LeftButton:
-            if self.grab:
-                self._end_grab()
-                self.grab = False
+            if self.controller.grabbing():
+                self.controller.end_grab()
             elif not ev.modifiers() & Qt.ShiftModifier:
                 self._select_exclusive()
             ev.accept()
 
     def mouseMoveEvent(self, ev):
-        if self.isSelected() and not self.grab:
-            self._start_grab()
-        if self.grab:
-            self._nominal_grab(ev.scenePos())
+        if self.isSelected() and not self.controller.grabbing():
+            self.controller.start_grab(self.down_pos)
+        if self.controller.grabbing():
+            self.controller.step_grab(ev.scenePos())
             ev.accept()
 
     def itemChange(self, change, value):
