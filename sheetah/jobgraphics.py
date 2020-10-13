@@ -99,25 +99,35 @@ class GraphicsCutPartItem(QtWidgets.QGraphicsPathItem):
         self.params_dialog.reset_params()
         self.params_dialog.exec_()
 
-    def leftPressHandler(self, pos):
+    def _select_toggle(self):
+        self.setSelected(not self.isSelected())
+        self.project.set_selection([i.job for i in self.scene().selectedItems()])
+
+    def _select_exclusive(self):
+        self.scene().clearSelection()
+        self.setSelected(True)
+        self.project.set_selection(self.job)
+
+    def leftPressHandler(self, ev):
+        if ev.modifiers() & Qt.ShiftModifier:
+            self._select_toggle()
+        elif not self.isSelected():
+            self._select_exclusive()
+
+        if self.isSelected():
+            self.press = True
+            self.down_pos = self.prev_pos = ev.pos()
+
+    def leftReleaseHandler(self, ev):
+        if (not ev.modifiers() & Qt.ShiftModifier
+            and {self.job} != self.project.selection):
+            self._select_exclusive()
+
+    def rightPressHandler(self, ev):
         if not self.isSelected():
-            self.scene().clearSelection()
-            self.setSelected(True)
-            self.project.set_selection(self.job)
+            self._select_exclusive()
 
-    def leftReleaseHandler(self, pos):
-        if {self.job} != self.project.selection:
-            self.scene().clearSelection()
-            self.setSelected(True)
-            self.project.set_selection(self.job)
-
-    def rightPressHandler(self, pos):
-        if not self.isSelected():
-            self.scene().clearSelection()
-            self.setSelected(True)
-            self.project.set_selection(self.job)
-
-    def rightReleaseHandler(self, pos):
+    def rightReleaseHandler(self, ev):
         pass
 
     def contextMenuEvent(self, ev):
@@ -134,22 +144,20 @@ class GraphicsCutPartItem(QtWidgets.QGraphicsPathItem):
 
     def mousePressEvent(self, ev):
         if ev.button() & Qt.LeftButton:
-            self.leftPressHandler(ev.pos())
-            self.press = True
-            self.down_pos = self.prev_pos = ev.pos()
+            self.leftPressHandler(ev)
             ev.accept()
         elif ev.button() & Qt.RightButton:
-            self.rightPressHandler(ev.pos())
+            self.rightPressHandler(ev)
 
     def mouseReleaseEvent(self, ev):
         if ev.button() & Qt.LeftButton:
             if self.drag:
                 self.project.end_transform()
             else:
-                self.leftReleaseHandler(ev.pos())
+                self.leftReleaseHandler(ev)
             self.press = self.drag = False
         elif ev.button() & Qt.RightButton:
-            self.rightReleaseHandler(ev.pos())
+            self.rightReleaseHandler(ev)
 
     def mouseMoveEvent(self, ev):
         if self.press:
