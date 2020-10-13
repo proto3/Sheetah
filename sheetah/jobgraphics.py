@@ -63,17 +63,27 @@ class GraphicsCutPathsItem(QtWidgets.QGraphicsPathItem):
             painter.setPen(self.pen_base)
             painter.drawPath(self.painter_paths[i])
 
+class GraphicsProxyItem(QtWidgets.QGraphicsItem):
+    def paint(self, painter, option, widget):
+        b = self.parentItem().brush()
+        self.parentItem().setBrush(QtGui.QBrush(QtGui.QColor(50, 200, 255, 100)))
+        GraphicsCutPartItem.paint(self.parentItem(), painter, option, widget)
+        self.parentItem().setBrush(b)
+
+    def boundingRect(self):
+        return self.parentItem().boundingRect()
+
 class GraphicsCutPartItem(QtWidgets.QGraphicsPathItem):
     def __init__(self, project, job):
         super().__init__()
         self.project = project
         self.job = job
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable)
-        self.press = False
-        self.drag = False
+        self.grab = False
 
-        self.selectBrush = QtGui.QBrush(QtGui.QColor(65, 220, 10, 95))
-        self.unselectBrush = QtGui.QBrush(QtGui.QColor(4, 150, 255, 95))
+        # self.selectBrush = QtGui.QBrush(QtGui.QColor(65, 220, 10, 95))
+        self.selectBrush = QtGui.QBrush(QtGui.QColor(4, 200, 255, 200))
+        self.unselectBrush = QtGui.QBrush(QtGui.QColor(4, 150, 255, 150))
         self.setBrush(self.unselectBrush)
         self.setPen(QtGui.QPen(Qt.NoPen))
 
@@ -99,77 +109,78 @@ class GraphicsCutPartItem(QtWidgets.QGraphicsPathItem):
         self.params_dialog.reset_params()
         self.params_dialog.exec_()
 
+    def _start_grab(self):
+        self.grab = True
+        self.items = self.scene().selectedItems()
+        self.proxy_items = [GraphicsProxyItem(item) for item in self.items]
+
+    def _nominal_grab(self, pos):
+        if pos != self.prev_pos:
+            diff = pos - self.prev_pos
+            for item in self.proxy_items:
+                item.setPos(item.pos() + diff)
+            self.prev_pos = pos
+
+    def _end_grab(self):
+        for item in self.proxy_items:
+            self.scene().removeItem(item)
+        full_move = self.prev_pos - self.down_pos
+        full_move = np.array([full_move.x(), full_move.y()])
+        for item in self.items:
+            item.job.position += full_move
+        self.items = self.proxy_items = []
+
+        # TODO baaahhh...
+        self.scene().selectionChanged.emit()
+
     def _select_toggle(self):
         self.setSelected(not self.isSelected())
-        self.project.set_selection([i.job for i in self.scene().selectedItems()])
 
     def _select_exclusive(self):
+        self.scene().blockSignals(True)
         self.scene().clearSelection()
+        self.scene().blockSignals(False)
         self.setSelected(True)
-        self.project.set_selection(self.job)
-
-    def leftPressHandler(self, ev):
-        if ev.modifiers() & Qt.ShiftModifier:
-            self._select_toggle()
-        elif not self.isSelected():
-            self._select_exclusive()
-
-        if self.isSelected():
-            self.press = True
-            self.down_pos = self.prev_pos = ev.pos()
-
-    def leftReleaseHandler(self, ev):
-        if (not ev.modifiers() & Qt.ShiftModifier
-            and {self.job} != self.project.selection):
-            self._select_exclusive()
-
-    def rightPressHandler(self, ev):
-        if not self.isSelected():
-            self._select_exclusive()
-
-    def rightReleaseHandler(self, ev):
-        pass
 
     def contextMenuEvent(self, ev):
         self.menu.popup(ev.screenPos())
         ev.accept()
 
+    def mousePressEvent(self, ev):
+        if ev.button() & Qt.LeftButton:
+            self.down_pos = self.prev_pos = ev.scenePos()
+            if ev.modifiers() & Qt.ShiftModifier:
+                self._select_toggle()
+            elif not self.isSelected():
+                self._select_exclusive()
+            ev.accept()
+        elif ev.button() & Qt.RightButton and not self.isSelected():
+            self._select_exclusive()
+
+    def mouseReleaseEvent(self, ev):
+        if ev.button() & Qt.LeftButton:
+            if self.grab:
+                self._end_grab()
+                self.grab = False
+            elif not ev.modifiers() & Qt.ShiftModifier:
+                self._select_exclusive()
+            ev.accept()
+
+    def mouseMoveEvent(self, ev):
+        if self.isSelected() and not self.grab:
+            self._start_grab()
+        if self.grab:
+            self._nominal_grab(ev.scenePos())
+            ev.accept()
+
     def itemChange(self, change, value):
+        # Update brush on selection change
         if change == QtWidgets.QGraphicsItem.ItemSelectedChange:
             if value:
                 self.setBrush(self.selectBrush)
             else:
                 self.setBrush(self.unselectBrush)
         return QtWidgets.QGraphicsItem.itemChange(self, change, value)
-
-    def mousePressEvent(self, ev):
-        if ev.button() & Qt.LeftButton:
-            self.leftPressHandler(ev)
-            ev.accept()
-        elif ev.button() & Qt.RightButton:
-            self.rightPressHandler(ev)
-
-    def mouseReleaseEvent(self, ev):
-        if ev.button() & Qt.LeftButton:
-            if self.drag:
-                self.project.end_transform()
-            else:
-                self.leftReleaseHandler(ev)
-            self.press = self.drag = False
-        elif ev.button() & Qt.RightButton:
-            self.rightReleaseHandler(ev)
-
-    def mouseMoveEvent(self, ev):
-        if self.press:
-            self.drag = True
-        if self.drag:
-            if ev.pos() != self.prev_pos:
-                self.project.step_transform(
-                    np.array([ev.pos().x(), ev.pos().y()]),
-                    np.array([self.prev_pos.x(), self.prev_pos.y()]),
-                    np.array([self.down_pos.x(), self.down_pos.y()]))
-                self.prev_pos = ev.pos()
-            ev.accept()
 
     def paint(self, painter, option, widget):
         # override paint to hide default selection style

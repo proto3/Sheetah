@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from PyQt5 import QtWidgets
+from PyQt5.QtCore import Qt
 import pyqtgraph as pg
+
 
 from project import Project
 from klippercontroller import KlipperController, KlipperControllerUI
@@ -12,6 +14,7 @@ from workspacegraphics import WorkspaceView, ProjectBar
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, graphicview, sidebar, console):
         super().__init__()
+        self.graphicview = graphicview
         self.setWindowTitle("Sheetah")
         widget = QtWidgets.QWidget()
         layout = QtWidgets.QGridLayout()
@@ -23,6 +26,26 @@ class MainWindow(QtWidgets.QMainWindow):
         layout.addWidget(sidebar, 1, 1)
         widget.setLayout(layout)
         self.setCentralWidget(widget)
+        self.i = 0
+
+    def keyPressEvent(self, ev):
+        # Ctrl + A
+        if ev.key() == Qt.Key_A and ev.modifiers() == Qt.ControlModifier:
+            print('Select All')
+            for i in self.graphicview.scene().items():
+                i.setSelected(True)
+        # Ctrl + Z
+        if ev.key() == Qt.Key_Z and ev.modifiers() == Qt.ControlModifier:
+            print('Undo')
+        # Ctrl + Shift + Z
+        if (ev.key() == Qt.Key_Z and
+            ev.modifiers() == (Qt.ControlModifier | Qt.ShiftModifier)):
+            print('Redo')
+        # Ctrl + S
+        elif ev.key() == Qt.Key_S and ev.modifiers() == Qt.ControlModifier:
+            print('Save')
+        else:
+            self.graphicview.keyPressEvent(ev)
 
 if __name__ == '__main__':
     app = QtWidgets.QApplication([])

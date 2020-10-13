@@ -3,6 +3,9 @@ from PyQt5.QtCore import Qt
 
 from jobgraphics import JobVisual
 from videothread import VideoThread
+from transformhandle import TransformHandle
+
+import numpy as np
 
 class ProjectBar(QtGui.QWidget):
     def __init__(self, project, parent=None):
@@ -23,17 +26,19 @@ class ProjectBar(QtGui.QWidget):
         if filepath:
             self.project.load_job(filepath)
 
-class GraphicsOverlayItem(QtWidgets.QGraphicsProxyWidget):
-    def __init__(self, view, pos, widget):
-        super().__init__()
-        self.view = view
-        self.pos = pos
-        self.setWidget(widget)
-        self.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations)
-        self.setZValue(2)
-
-    def updatePos(self):
-        self.setPos(self.view.mapToScene(self.pos))
+## OVERLAY
+# class GraphicsOverlayItem(QtWidgets.QGraphicsProxyWidget):
+#     def __init__(self, view, pos, widget):
+#         super().__init__()
+#         self.view = view
+#         self.pos = pos
+#         self.setWidget(widget)
+#         self.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations)
+#         self.setZValue(2)
+#
+#     def updatePos(self):
+#         self.setPos(self.view.mapToScene(self.pos))
+## !OVERLAY
 
 class WorkspaceView(QtWidgets.QGraphicsView):
     def __init__(self, project):
@@ -53,6 +58,7 @@ class WorkspaceView(QtWidgets.QGraphicsView):
         machinePen = QtGui.QPen(QtGui.QColor(239, 67, 15))
         machinePen.setCosmetic(True)
         self.machine.setPen(machinePen)
+        self.machine.setBrush(QtGui.QBrush(QtGui.QColor(50, 60, 70)))
         self.scene().addItem(self.machine)
         self.fitInView(self.machine.rect(), Qt.KeepAspectRatio)
 
@@ -78,7 +84,7 @@ class WorkspaceView(QtWidgets.QGraphicsView):
             self.setViewport(gl_viewport)
         else:
             if antialias:
-                self.setRenderHints(QPainter.Antialiasing)
+                self.setRenderHints(QtGui.QPainter.Antialiasing)
 
         # flip view vertically
         self.scale(1, -1)
@@ -91,12 +97,15 @@ class WorkspaceView(QtWidgets.QGraphicsView):
         self.selectBox.hide()
         self.scene().addItem(self.selectBox)
 
+        self.handle = TransformHandle(self.project, self.scene())
+        self.scene().addItem(self.handle)
+
+
         self.dragging = False
         self.selecting = False
 
         self.menu = QtGui.QMenu()
         self.action = QtGui.QAction('Preferences')
-        self.action.triggered.connect(self.do_action)
         self.menu.addAction(self.action)
 
         # Avoid Qt bug occuring when the view is clicked after a focus loss, the
@@ -104,41 +113,48 @@ class WorkspaceView(QtWidgets.QGraphicsView):
         # focus loss to prevent that.
         self.lastScenePosOutdated = False
 
-        self.tr_btn = QtWidgets.QRadioButton()
-        self.rot_btn = QtWidgets.QRadioButton()
-        self.sc_btn = QtWidgets.QRadioButton()
+        ## OVERLAY
+        # self.tr_btn = QtWidgets.QRadioButton()
+        # self.rot_btn = QtWidgets.QRadioButton()
+        # self.sc_btn = QtWidgets.QRadioButton()
+        #
+        # pixmap = QtGui.QPixmap('resources/translate_small.png')
+        # self.tr_btn.setIcon(QtGui.QIcon(pixmap))
+        # self.tr_btn.setIconSize(pixmap.rect().size())
+        # pixmap = QtGui.QPixmap('resources/rotate_small.png')
+        # self.rot_btn.setIcon(QtGui.QIcon(pixmap))
+        # self.rot_btn.setIconSize(pixmap.rect().size())
+        # pixmap = QtGui.QPixmap('resources/scale_small.png')
+        # self.sc_btn.setIcon(QtGui.QIcon(pixmap))
+        # self.sc_btn.setIconSize(pixmap.rect().size())
+        #
+        # self.mode_btn_group = QtWidgets.QButtonGroup()
+        # self.mode_btn_group.addButton(self.tr_btn)
+        # self.mode_btn_group.addButton(self.rot_btn)
+        # self.mode_btn_group.addButton(self.sc_btn)
+        # self.tr_btn.toggle()
+        # self.project.set_transform_mode('translate')
+        # self.mode_btn_group.buttonClicked.connect(self.on_mode_change)
+        #
+        # self.overlay_items = []
+        # self.add_overlay_item(GraphicsOverlayItem(self, QtCore.QPoint(0,180), self.tr_btn))
+        # self.add_overlay_item(GraphicsOverlayItem(self, QtCore.QPoint(0,267), self.rot_btn))
+        # self.add_overlay_item(GraphicsOverlayItem(self, QtCore.QPoint(0,354), self.sc_btn))
+        ## !OVERLAY
 
-        pixmap = QtGui.QPixmap('resources/translate_small.png')
-        self.tr_btn.setIcon(QtGui.QIcon(pixmap))
-        self.tr_btn.setIconSize(pixmap.rect().size())
-        pixmap = QtGui.QPixmap('resources/rotate_small.png')
-        self.rot_btn.setIcon(QtGui.QIcon(pixmap))
-        self.rot_btn.setIconSize(pixmap.rect().size())
-        pixmap = QtGui.QPixmap('resources/scale_small.png')
-        self.sc_btn.setIcon(QtGui.QIcon(pixmap))
-        self.sc_btn.setIconSize(pixmap.rect().size())
+        self.hovered = False
+        self.mode = 'inactive'
 
-        self.mode_btn_group = QtWidgets.QButtonGroup()
-        self.mode_btn_group.addButton(self.tr_btn)
-        self.mode_btn_group.addButton(self.rot_btn)
-        self.mode_btn_group.addButton(self.sc_btn)
-        self.tr_btn.toggle()
-        self.project.set_transform_mode('translate')
-        self.mode_btn_group.buttonClicked.connect(self.on_mode_change)
-
-        self.overlay_items = []
-        self.add_overlay_item(GraphicsOverlayItem(self, QtCore.QPoint(0,180), self.tr_btn))
-        self.add_overlay_item(GraphicsOverlayItem(self, QtCore.QPoint(0,267), self.rot_btn))
-        self.add_overlay_item(GraphicsOverlayItem(self, QtCore.QPoint(0,354), self.sc_btn))
-
-    def on_mode_change(self):
-        if self.mode_btn_group.checkedButton() == self.tr_btn:
-            mode = 'translate'
-        elif self.mode_btn_group.checkedButton() == self.rot_btn:
-            mode = 'rotate'
-        elif self.mode_btn_group.checkedButton() == self.sc_btn:
-            mode = 'scale'
-        self.project.set_transform_mode(mode)
+    ## OVERLAY
+    # def on_mode_change(self):
+    #     if self.mode_btn_group.checkedButton() == self.tr_btn:
+    #         mode = 'translate'
+    #     elif self.mode_btn_group.checkedButton() == self.rot_btn:
+    #         mode = 'rotate'
+    #     elif self.mode_btn_group.checkedButton() == self.sc_btn:
+    #         mode = 'scale'
+    #     self.project.set_transform_mode(mode)
+    ## !OVERLAY
 
     def on_frame(self):
         cvImg = self.video_thread.frame
@@ -148,7 +164,8 @@ class WorkspaceView(QtWidgets.QGraphicsView):
         self.bg_image.setPixmap(QtGui.QPixmap(qImg))
 
     def selectionChange(self):
-        self.project.set_selection([i.job for i in self.scene().selectedItems()])
+        self.handle.on_selection()
+        # self.project.set_selection([i.job for i in self.scene().selectedItems()])
 
     def on_job_update(self):
         jobs = self.project.jobs.copy()
@@ -175,22 +192,17 @@ class WorkspaceView(QtWidgets.QGraphicsView):
         for item in job_visual.items():
             self.scene().removeItem(item)
 
-    def keyPressEvent(self, ev):
-        if ev.key() == Qt.Key_Delete:
-            self.project.remove_jobs([item.job for item in self.scene().selectedItems()])
+    ## OVERLAY
+    # def add_overlay_item(self, item):
+    #     self.scene().addItem(item)
+    #     self.overlay_items.append(item)
+    ## !OVERLAY
 
-    def add_overlay_item(self, item):
-        self.scene().addItem(item)
-        self.overlay_items.append(item)
-
-    def do_action(self):
-        print('action done')
-
-    def contextMenuEvent(self, ev):
-        QtWidgets.QGraphicsView.contextMenuEvent(self, ev)
-        if not ev.isAccepted():
-            self.menu.popup(ev.globalPos())
-            ev.accept()
+    # def contextMenuEvent(self, ev):
+    #     QtWidgets.QGraphicsView.contextMenuEvent(self, ev)
+    #     if not ev.isAccepted():
+    #         self.menu.popup(ev.globalPos())
+    #         ev.accept()
 
     def focusOutEvent(self, ev):
         QtWidgets.QGraphicsView.focusOutEvent(self, ev)
@@ -216,9 +228,78 @@ class WorkspaceView(QtWidgets.QGraphicsView):
         viewport = self.viewportTransform().inverted()[0].mapRect(r)
         viewport.translate(new_center - viewport.center())
         self.setSceneRect(viewport)
-        for item in self.overlay_items:
-            item.updatePos()
         self.selecting = False
+
+        ## OVERLAY
+        # for item in self.overlay_items:
+        #     item.updatePos()
+        ## !OVERLAY
+
+    # def init_grab(self, pos):
+    #     if self.project.selection:
+    #         self.mode = 'grab'
+    #         self.project.set_transform_mode('translate')
+    #         self.init_pos = self.prev_pos = pos
+    #
+    # def init_rotate(self, pos):
+    #     if self.project.selection:
+    #         self.mode = 'rotate'
+    #         self.project.set_transform_mode('rotate')
+    #         self.init_pos = self.prev_pos = pos
+    #
+    # def init_scale(self, pos):
+    #     if self.project.selection:
+    #         self.mode = 'scale'
+    #         self.project.set_transform_mode('scale')
+    #         self.init_pos = self.prev_pos = pos
+    #
+    # def step_transform(self, ev):
+    #     pos = self.mapToScene(ev.pos())
+    #     if pos != self.prev_pos:
+    #         self.project.step_transform(
+    #             np.array([pos.x(), pos.y()]),
+    #             np.array([self.prev_pos.x(), self.prev_pos.y()]),
+    #             np.array([self.init_pos.x(), self.init_pos.y()]))
+    #         self.prev_pos = pos
+    #
+    # def end_transform(self, ev):
+    #     if ev.button() & Qt.LeftButton:
+    #         self.mode = 'inactive'
+    #     elif ev.button() & Qt.RightButton:
+    #         self.mode = 'inactive'
+    #         self.project.reset_transform()
+
+    def enterEvent(self, ev):
+        self.hovered = True
+
+    def leaveEvent(self, ev):
+        self.hovered = False
+
+    def keyPressEvent(self, ev):
+        if not self.hovered:
+            ev.ignore()
+            return
+
+        # view_pos = self.mapFromGlobal(QtGui.QCursor.pos())
+        # scene_pos = self.mapToScene(view_pos)
+
+        if ev.modifiers() == Qt.NoModifier:
+            if ev.key() == Qt.Key_Delete:
+                self.project.remove_jobs([item.job for item in
+                                          self.scene().selectedItems()])
+            elif ev.key() == Qt.Key_Escape:
+                print('Esc')
+            # elif ev.key() == Qt.Key_G:
+            #     self.init_grab(scene_pos)
+            # elif ev.key() == Qt.Key_R:
+            #     self.init_rotate(scene_pos)
+            # elif ev.key() == Qt.Key_S:
+            #     self.init_scale(scene_pos)
+            else:
+                ev.ignore()
+        else:
+            # modifiers shortcut
+            ev.ignore()
 
     def mouseDoubleClickEvent(self, ev):
         self.posSyncCheck(ev)
@@ -226,6 +307,10 @@ class WorkspaceView(QtWidgets.QGraphicsView):
 
     def mousePressEvent(self, ev):
         self.posSyncCheck(ev)
+
+        # if self.mode in {'grab', 'rotate', 'scale'}:
+        #     self.end_transform(ev)
+        # el
         if ev.button() & Qt.MidButton:
             self.prev_pos = ev.pos()
             self.dragging = True
@@ -235,6 +320,9 @@ class WorkspaceView(QtWidgets.QGraphicsView):
                 if ev.button() & Qt.LeftButton:
                     self.scene().clearSelection()
                     self.downPos = self.mapToScene(ev.pos())
+                    ini_rect = QtCore.QRectF(self.downPos, self.downPos)
+                    self.selectBox.setRect(ini_rect)
+                    self.selectBox.show()
                     self.selecting = True
 
     def mouseReleaseEvent(self, ev):
@@ -243,11 +331,15 @@ class WorkspaceView(QtWidgets.QGraphicsView):
         elif self.selecting:
             self.selecting = False
             self.selectBox.hide()
-            self.selectionChange()
+            self.scene().setSelectionArea(self.selectBox.shape())
+            # self.selectionChange()
         else:
             QtWidgets.QGraphicsView.mouseReleaseEvent(self, ev)
 
     def mouseMoveEvent(self, ev):
+        # if self.mode in {'grab', 'rotate', 'scale'}:
+        #     self.step_transform(ev)
+        # el
         if self.dragging:
             pos_diff = self.prev_pos - ev.pos()
             if not pos_diff.isNull():
@@ -255,15 +347,17 @@ class WorkspaceView(QtWidgets.QGraphicsView):
                 diff = sf.map(QtCore.QPointF(pos_diff))
                 new_rect = self.sceneRect().translated(diff)
                 self.setSceneRect(new_rect)
-                for item in self.overlay_items:
-                    item.updatePos()
+                ## OVERLAY
+                # for item in self.overlay_items:
+                #     item.updatePos()
+                ## !OVERLAY
                 self.prev_pos = ev.pos()
         elif self.selecting:
             scene_pos = self.mapToScene(ev.pos())
             rect = QtCore.QRectF(self.downPos, scene_pos).normalized()
             self.selectBox.setRect(rect)
-            self.selectBox.show()
-            self.scene().setSelectionArea(self.selectBox.shape())
+            # self.selectBox.show()
+            # self.scene().setSelectionArea(self.selectBox.shape())
         else:
             QtWidgets.QGraphicsView.mouseMoveEvent(self, ev)
 
@@ -273,5 +367,7 @@ class WorkspaceView(QtWidgets.QGraphicsView):
         viewport = self.viewportTransform().inverted()[0].mapRect(r)
         viewport.translate(self.sceneRect().center() - viewport.center())
         self.setSceneRect(viewport)
-        for item in self.overlay_items:
-            item.updatePos()
+        ## OVERLAY
+        # for item in self.overlay_items:
+        #     item.updatePos()
+        ## !OVERLAY
