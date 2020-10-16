@@ -178,9 +178,8 @@ class Polyline(PolylineInterface):
         polyline._cavc_up_to_date = False
         polyline._shapely_up_to_date = False
         polyline._lines_up_to_date = False
-        r_rad = r / 180 * math.pi
-        cos = math.cos(r_rad) * s
-        sin = math.sin(r_rad)
+        cos = math.cos(r) * s
+        sin = math.sin(r)
         tr_mat = np.array([[cos,-sin, d[0]],
                            [sin, cos, d[1]],
                            [  0,   0,    1]])
@@ -289,7 +288,7 @@ def circle2polyline(center, radius):
 
 # TODO replace with biarc
 def spline2polyline(degree, control_points, closed):
-    epsilon = 1e-2
+    epsilon = 1e-1
     spline = BSpline.Curve()
     spline.degree = degree
     spline.ctrlpts = control_points

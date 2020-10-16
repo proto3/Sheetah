@@ -131,16 +131,19 @@ class Job(QtCore.QObject):
         self.root_node = PipelineNode(None, None)
         self.root_node._data = polylines
 
+        # vector
         self.dir_node      = PipelineNode(self._apply_direction, self.root_node)
         self.scale_node    = PipelineNode(self._apply_scale, self.dir_node)
         self.offset_node   = PipelineNode(self._apply_offset, self.scale_node)
         self.lead_node     = PipelineNode(self._apply_lead, self.offset_node)
         self.loop_node     = PipelineNode(self._apply_loop, self.lead_node)
+        # discrete (display only)
         self.cut_gen_node  = PipelineNode(self._generate, self.loop_node)
         self.part_gen_node = PipelineNode(self._generate_shape, self.scale_node)
         self.cut_aff_node  = PipelineNode(self._apply_affine, self.cut_gen_node)
         self.part_aff_node = PipelineNode(self._apply_affine, self.part_gen_node)
-        # self.gcode_node   = PipelineNode(self._to_gcode, self.cut_aff_node)
+
+        self.cut_pline_affine_node = PipelineNode(self._apply_pline_affine, self.loop_node)
 
         self.cut_count = 0
         self.lead_pos = [0.] * self.cut_count
@@ -161,6 +164,7 @@ class Job(QtCore.QObject):
         self._position = np.array(p)
         self.cut_aff_node.notify_change()
         self.part_aff_node.notify_change()
+        self.cut_pline_affine_node.notify_change()
         self.shape_update.emit()
 
     @property
@@ -172,6 +176,7 @@ class Job(QtCore.QObject):
         self._angle = a
         self.cut_aff_node.notify_change()
         self.part_aff_node.notify_change()
+        self.cut_pline_affine_node.notify_change()
         self.shape_update.emit()
 
     def turn_around(self, center, angle):
@@ -183,6 +188,7 @@ class Job(QtCore.QObject):
         self._position = center + [v[0]*cos - v[1]*sin, v[0]*sin + v[1]*cos]
         self.cut_aff_node.notify_change()
         self.part_aff_node.notify_change()
+        self.cut_pline_affine_node.notify_change()
         self.shape_update.emit()
 
     def pos_rot_matrix(self):
@@ -208,6 +214,7 @@ class Job(QtCore.QObject):
         self.scale_node.notify_change()
         self.cut_aff_node.notify_change()
         self.part_aff_node.notify_change()
+        self.cut_pline_affine_node.notify_change()
         self.shape_update.emit()
 
     @property
@@ -217,6 +224,7 @@ class Job(QtCore.QObject):
     def exterior_clockwise(self, e):
         self._exterior_clockwise = e
         self.need_contour_transform = True
+        self.dir_node.notify_change()
         self.shape_update.emit()
         self.param_update.emit()
 
@@ -311,6 +319,9 @@ class Job(QtCore.QObject):
     def get_cut_paths(self):
         return (self.cut_aff_node.data, self.cut_state)
 
+    def get_cut_plines(self):
+        return self.cut_pline_affine_node.data
+
     def _apply_direction(self, polylines):
         directed_polylines = []
         for p in polylines[:-1]:
@@ -323,6 +334,7 @@ class Job(QtCore.QObject):
             directed_polylines.append(exterior.reverse())
         else:
             directed_polylines.append(exterior)
+        # print(directed_polylines[0].to_lines())
         return directed_polylines
 
     def _apply_scale(self, polylines):
@@ -346,7 +358,7 @@ class Job(QtCore.QObject):
         return polylines
 
     def _apply_loop(self, polylines):
-        return [p.loop(120*math.pi/180, self.kerf_width / 2, self._loop_radius)
+        return [p.loop(121*math.pi/180, self.kerf_width / 2, self._loop_radius)
                 for p in polylines]
 
     def _generate(self, polylines):
@@ -360,6 +372,9 @@ class Job(QtCore.QObject):
     def _apply_affine(self, polylines):
         return [np.dot(self.pos_rot_matrix(), np.insert(p, 2, 1., axis=0))[:-1]
                 for p in polylines]
+
+    def _apply_pline_affine(self, polylines):
+        return [p.affine(self._position, self._angle, 1.) for p in polylines]
 
     def is_closed(self):
         polylines = self.root_node._data
