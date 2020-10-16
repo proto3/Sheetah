@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-from copy import copy, deepcopy
+from copy import copy
 import math
 import numpy as np
 
@@ -370,7 +370,7 @@ class EdgeConnector:
             return self._polyline.reverse()
 
 class KdTree:
-    def __init__(self, connector, split_dir=True, precision=1e-3):
+    def __init__(self, connector, split_dir=True, precision=1e-2):
         self._connectors = [connector]
         self._split_dir = split_dir # True is for vertical
         self._precision = precision

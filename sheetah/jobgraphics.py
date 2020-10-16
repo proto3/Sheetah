@@ -4,108 +4,33 @@ from PyQt5.QtCore import Qt
 from pyqtgraph import arrayToQPath
 import numpy as np
 
-class JobVisual:
-    def __init__(self, controller, job):
-        self.job = job
-        cut_colors = [QtGui.QColor(255, 255, 255),
-                      QtGui.QColor(250, 170,   0),
-                      QtGui.QColor(  5, 220,  10),
-                      QtGui.QColor(255,   0,   0),
-                      QtGui.QColor(100, 100, 100)]
-        self.cut_item = GraphicsCutPathsItem(cut_colors)
-        self.part_item = GraphicsCutPartItem(controller, job)
-        self.job.shape_update.connect(self.on_job_shape_update)
-        self.on_job_shape_update()
-
-    def items(self):
-        return [self.part_item, self.cut_item]
-
-    def on_job_shape_update(self):
-        self.part_item.setData(self.job.get_shape_paths())
-        self.cut_item.setData(*self.job.get_cut_paths(), self.job.kerf_width)
-
-class GraphicsCutPathsItem(QtWidgets.QGraphicsPathItem):
-    def __init__(self, state_colors):
-        super().__init__()
-        self.colors = state_colors
-        self.painter_paths = [QtGui.QPainterPath()] * len(state_colors)
-        self.pen_base = QtGui.QPen(QtGui.QBrush(), 0, Qt.SolidLine, Qt.RoundCap,
-                                   Qt.RoundJoin)
-
-    def setWidth(self, width):
-        self.pen_base.setWidthF(width)
-
-    # last path should always be the external contour
-    def setData(self, paths, states, width=None):
-        self.prepareGeometryChange()
-        if width is not None:
-            self.pen_base.setWidthF(width)
-        if paths:
-            data = [np.empty((2,0), dtype=np.float) for i in range(5)]
-            connect = [np.empty(0, dtype=np.bool) for i in range(5)]
-            for i, state in enumerate(states):
-                connected = np.ones(paths[i].shape[1], dtype=np.bool)
-                connected[-1] = False
-                connect[state] = np.concatenate((connect[state], connected))
-                data[state] = np.concatenate((data[state], paths[i]), axis=1)
-            self.painter_paths = [arrayToQPath(data[i][0], data[i][1], connect[i])
-                                  for i in range(len(self.painter_paths))]
-            # last path is used to keep shape and boundingRect up to date
-            self.setPath(self.painter_paths[states[-1]])
-        else:
-            self.setPath(QtGui.QPainterPath())
-        self.update()
-
-    def paint(self, painter, option, widget):
-        for i, color in enumerate(self.colors):
-            self.pen_base.setColor(color)
-            painter.setPen(self.pen_base)
-            painter.drawPath(self.painter_paths[i])
-
-class GraphicsProxyItem(QtWidgets.QGraphicsItem):
-    def paint(self, painter, option, widget):
-        b = self.parentItem().brush()
-        self.parentItem().setBrush(QtGui.QBrush(QtGui.QColor(50, 200, 255, 100)))
-        GraphicsCutPartItem.paint(self.parentItem(), painter, option, widget)
-        self.parentItem().setBrush(b)
-
-    def boundingRect(self):
-        return self.parentItem().boundingRect()
-
-class GraphicsCutPartItem(QtWidgets.QGraphicsPathItem):
+class JobVisual(QtWidgets.QGraphicsPathItem):
     def __init__(self, controller, job):
         super().__init__()
         self.controller = controller
         self.job = job
         self.setFlag(QtWidgets.QGraphicsItem.ItemIsSelectable)
 
-        # self.selectBrush = QtGui.QBrush(QtGui.QColor(65, 220, 10, 95))
-        self.selectBrush = QtGui.QBrush(QtGui.QColor(4, 200, 255, 200))
-        self.unselectBrush = QtGui.QBrush(QtGui.QColor(4, 150, 255, 150))
-        self.setBrush(self.unselectBrush)
-        self.setPen(QtGui.QPen(Qt.NoPen))
+        self.cut_colors = [QtGui.QColor(255, 255, 255),
+                           QtGui.QColor(250, 170,   0),
+                           QtGui.QColor(  5, 220,  10),
+                           QtGui.QColor(255,   0,   0),
+                           QtGui.QColor(100, 100, 100)]
+        self.cut_paths = [QtGui.QPainterPath()] * len(self.cut_colors)
+        self.pen_base = QtGui.QPen(QtGui.QBrush(), 0,
+                                   Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
+
+        self.select_brush = QtGui.QBrush(QtGui.QColor(4, 200, 255, 200))
+        self.unselect_brush = QtGui.QBrush(QtGui.QColor(4, 150, 255, 150))
+
+        self.job.shape_update.connect(self.on_job_shape_update)
+        self.on_job_shape_update()
 
         self.menu = QtGui.QMenu()
         self.action = QtGui.QAction('Job settings')
         self.action.triggered.connect(self.on_job_settings)
         self.menu.addAction(self.action)
-
         self.params_dialog = JobParamDialog(self.job)
-
-    def setData(self, paths):
-        data = np.empty((2,0), dtype=np.float)
-        connect = np.empty(0, dtype=np.bool)
-        for path in paths:
-            connected = np.ones(path.shape[1], dtype=np.bool)
-            connected[-1] = False
-            connect = np.concatenate((connect, connected))
-            data = np.concatenate((data, path), axis=1)
-        self.setPath(arrayToQPath(data[0], data[1], connect))
-
-    def on_job_settings(self):
-        self.params_dialog.move(self.menu.pos())
-        self.params_dialog.reset_params()
-        self.params_dialog.exec_()
 
     def _select_toggle(self):
         self.setSelected(not self.isSelected())
@@ -141,22 +66,69 @@ class GraphicsCutPartItem(QtWidgets.QGraphicsPathItem):
         if self.isSelected() and not self.controller.grabbing():
             self.controller.start_grab(self.down_pos)
         if self.controller.grabbing():
-            self.controller.step_grab(ev.scenePos())
+            self.controller.step_grab(ev.scenePos(),
+                                      bool(ev.modifiers() & Qt.ControlModifier))
             ev.accept()
 
-    def itemChange(self, change, value):
-        # Update brush on selection change
-        if change == QtWidgets.QGraphicsItem.ItemSelectedChange:
-            if value:
-                self.setBrush(self.selectBrush)
-            else:
-                self.setBrush(self.unselectBrush)
-        return QtWidgets.QGraphicsItem.itemChange(self, change, value)
+    def on_job_shape_update(self):
+        data = np.empty((2,0), dtype=np.float)
+        connect = np.empty(0, dtype=np.bool)
+        for path in self.job.get_shape_paths():
+            connected = np.ones(path.shape[1], dtype=np.bool)
+            connected[-1] = False
+            connect = np.concatenate((connect, connected))
+            data = np.concatenate((data, path), axis=1)
+        self.fill_path = arrayToQPath(data[0], data[1], connect)
+
+        paths, states = self.job.get_cut_paths()
+        self.pen_base.setWidthF(self.job.kerf_width)
+        # set pen for boundingRect to take it into account
+        self.setPen(self.pen_base)
+        data = [np.empty((2,0), dtype=np.float) for i in range(5)]
+        connect = [np.empty(0, dtype=np.bool) for i in range(5)]
+        for i, state in enumerate(states):
+            connected = np.ones(paths[i].shape[1], dtype=np.bool)
+            connected[-1] = False
+            connect[state] = np.concatenate((connect[state], connected))
+            data[state] = np.concatenate((data[state], paths[i]), axis=1)
+        self.cut_paths = [arrayToQPath(data[i][0], data[i][1], connect[i])
+                              for i in range(len(self.cut_colors))]
+        # last path is used to keep shape and boundingRect up to date
+        self.setPath(self.cut_paths[states[-1]]) # TODO should take ALL paths
+
+        # TODO breaking encapsulation to refresh handle on kerf with update
+        self.controller.handle.update()
+
+    def on_job_settings(self):
+        self.params_dialog.move(self.menu.pos())
+        self.params_dialog.reset_params()
+        self.params_dialog.exec_()
 
     def paint(self, painter, option, widget):
-        # override paint to hide default selection style
-        option.state = option.state & ~QtWidgets.QStyle.State_Selected
-        QtWidgets.QGraphicsPathItem.paint(self, painter, option, widget)
+        if self.job.is_closed():
+            if self.isSelected():
+                painter.fillPath(self.fill_path, self.select_brush)
+            else:
+                painter.fillPath(self.fill_path, self.unselect_brush)
+
+        for i, color in enumerate(self.cut_colors):
+            self.pen_base.setColor(color)
+            painter.setPen(self.pen_base)
+            painter.drawPath(self.cut_paths[i])
+
+class JobVisualProxy(QtWidgets.QGraphicsPathItem):
+    def paint(self, painter, option, widget):
+        brush = QtGui.QBrush(QtGui.QColor(50, 200, 255, 100))
+        painter.fillPath(self.parentItem().fill_path, brush)
+
+        pen = self.parentItem().pen_base
+        pen.setColor(QtGui.QColor(0, 0, 0))
+        painter.setPen(pen)
+        for path in self.parentItem().cut_paths:
+            painter.drawPath(path)
+
+    def boundingRect(self):
+        return self.parentItem().boundingRect()
 
 class JobParamDialog(QtWidgets.QDialog):
     def __init__(self, job, parent=None):

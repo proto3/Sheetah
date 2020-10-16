@@ -131,14 +131,14 @@ class Job(QtCore.QObject):
         self.root_node = PipelineNode(None, None)
         self.root_node._data = polylines
 
-        self.dir_node     = PipelineNode(self._apply_direction, self.root_node)
-        self.scale_node   = PipelineNode(self._apply_scale, self.dir_node)
-        self.offset_node  = PipelineNode(self._apply_offset, self.scale_node)
-        self.lead_node    = PipelineNode(self._apply_lead, self.offset_node)
-        self.loop_node    = PipelineNode(self._apply_loop, self.lead_node)
+        self.dir_node      = PipelineNode(self._apply_direction, self.root_node)
+        self.scale_node    = PipelineNode(self._apply_scale, self.dir_node)
+        self.offset_node   = PipelineNode(self._apply_offset, self.scale_node)
+        self.lead_node     = PipelineNode(self._apply_lead, self.offset_node)
+        self.loop_node     = PipelineNode(self._apply_loop, self.lead_node)
         self.cut_gen_node  = PipelineNode(self._generate, self.loop_node)
-        self.part_gen_node = PipelineNode(self._generate, self.scale_node)
-        self.cut_aff_node = PipelineNode(self._apply_affine, self.cut_gen_node)
+        self.part_gen_node = PipelineNode(self._generate_shape, self.scale_node)
+        self.cut_aff_node  = PipelineNode(self._apply_affine, self.cut_gen_node)
         self.part_aff_node = PipelineNode(self._apply_affine, self.part_gen_node)
         # self.gcode_node   = PipelineNode(self._to_gcode, self.cut_aff_node)
 
@@ -333,6 +333,8 @@ class Job(QtCore.QObject):
         for p in polylines:
             if p.is_closed():
                 offset_polylines += p.offset(self.kerf_width / 2)
+            else:
+                offset_polylines.append(p)
         updated_cut_count = len(offset_polylines)
         if updated_cut_count != self.cut_count:
             self.cut_count = updated_cut_count
@@ -350,6 +352,15 @@ class Job(QtCore.QObject):
     def _generate(self, polylines):
         return [p.to_lines() for p in polylines]
 
+    def _generate_shape(self, polylines):
+        if len(polylines) > 1:
+            polylines = [p for p in polylines if p.is_closed()]
+        return self._generate(polylines)
+
     def _apply_affine(self, polylines):
         return [np.dot(self.pos_rot_matrix(), np.insert(p, 2, 1., axis=0))[:-1]
                 for p in polylines]
+
+    def is_closed(self):
+        polylines = self.root_node._data
+        return len(polylines) != 1 or polylines[0].is_closed()

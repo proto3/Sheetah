@@ -1,10 +1,32 @@
 from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import Qt
 
-import jobgraphics
-class ScaleHandle(QtWidgets.QGraphicsRectItem):
-    def __init__(self, parent):
+class RotateHandle(QtWidgets.QGraphicsEllipseItem):
+    def __init__(self, parent, controller):
         super().__init__(-5,-5,10,10, parent)
+        self.controller = controller
+        self.setPen(QtGui.QPen(Qt.NoPen))
+        self.setBrush(QtGui.QBrush(QtGui.QColor(50,180,255)))
+
+    def mousePressEvent(self, ev):
+        if ev.button() & Qt.LeftButton:
+            self.controller.start_rot(ev.scenePos())
+            ev.accept()
+
+    def mouseReleaseEvent(self, ev):
+        if ev.button() & Qt.LeftButton:
+            self.controller.end_rot()
+            ev.accept()
+
+    def mouseMoveEvent(self, ev):
+        self.controller.step_rot(ev.scenePos(),
+                                 bool(ev.modifiers() & Qt.ControlModifier))
+        ev.accept()
+
+class ScaleHandle(QtWidgets.QGraphicsRectItem):
+    def __init__(self, parent, controller):
+        super().__init__(-5,-5,10,10, parent)
+        self.controller = controller
         self.setPen(QtGui.QPen(Qt.NoPen))
         self.setBrush(QtGui.QBrush(QtGui.QColor(255,150,0)))
         self.setAcceptHoverEvents(True)
@@ -19,23 +41,18 @@ class ScaleHandle(QtWidgets.QGraphicsRectItem):
 
     def mousePressEvent(self, ev):
         if ev.button() & Qt.LeftButton:
+            self.controller.start_scale(ev.scenePos())
             ev.accept()
-            print("scale")
+
+    def mouseReleaseEvent(self, ev):
+        if ev.button() & Qt.LeftButton:
+            self.controller.end_scale()
+            ev.accept()
 
     def mouseMoveEvent(self, ev):
+        self.controller.step_scale(ev.scenePos(),
+                                   bool(ev.modifiers() & Qt.ControlModifier))
         ev.accept()
-        print("do scale")
-
-class RotateHandle(QtWidgets.QGraphicsEllipseItem):
-    def __init__(self, parent):
-        super().__init__(-5,-5,10,10, parent)
-        self.setPen(QtGui.QPen(Qt.NoPen))
-        self.setBrush(QtGui.QBrush(QtGui.QColor(50,180,255)))
-
-    def mousePressEvent(self, ev):
-        if ev.button() & Qt.LeftButton:
-            ev.accept()
-            print("rotate")
 
 class TransformHandle(QtWidgets.QGraphicsRectItem):
     def __init__(self, controller):
@@ -45,8 +62,8 @@ class TransformHandle(QtWidgets.QGraphicsRectItem):
         pen.setCosmetic(True)
         self.setPen(pen)
         self.setZValue(2)
-        self.scale = ScaleHandle(self)
-        self.rotate = RotateHandle(self)
+        self.rotate = RotateHandle(self, controller)
+        self.scale = ScaleHandle(self, controller)
         self.hide()
 
     def update(self):
@@ -56,8 +73,8 @@ class TransformHandle(QtWidgets.QGraphicsRectItem):
             b_rect = group.boundingRect()
             self.setRect(b_rect)
             self.scene().destroyItemGroup(group)
-            self.scale.setPos(b_rect.bottomRight())
-            self.rotate.setPos(b_rect.topRight())
+            self.rotate.setPos(b_rect.bottomRight())
+            self.scale.setPos(b_rect.topRight())
             self.show()
         else:
             self.hide()
