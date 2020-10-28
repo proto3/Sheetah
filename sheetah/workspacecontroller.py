@@ -4,14 +4,15 @@ import math
 
 from transformhandle import TransformHandle
 from jobgraphics import JobVisual, JobVisualProxy
+from pyqtgraph import Point
 
 class WorkspaceController:
     def __init__(self, project, view):
         self.project = project
-        self.job_visuals = []
         self.view = view
+        self.view.controller = self # TODO not clean
         self.scene = self.view.scene()
-        self.view.controller = self
+        self.job_visuals = []
 
         self._grab = False
         self.items = []
@@ -39,20 +40,23 @@ class WorkspaceController:
             self.scene.removeItem(item)
         self.proxy_items = []
 
-    def start_grab(self, down_pos):
-        self._grab = True
-        self._create_proxy_items()
-        self.down_pos = np.array([down_pos.x(), down_pos.y()])
+    def _selection_centroid(self):
+        items = self.scene.selectedItems()
+        centroids = [item.job.get_centroid() for item in items]
+        return Point(np.mean(centroids, axis=0))
 
-    def step_grab(self, pos, step_mode):
-        pos = np.array([pos.x(), pos.y()])
-        self.pos = pos - self.down_pos
+    def start_grab(self, pos):
+        self._create_proxy_items()
+        self.ini_pos = Point(pos)
+        self._grab = True
+
+    def step_grab(self, pos, step_mode=False):
+        self.pos = Point(pos) - self.ini_pos
         if step_mode:
             incr = 10
             self.pos = np.round(self.pos / incr) * incr
         for item in self.proxy_items:
-            item.setPos(self.pos[0], self.pos[1])
-        self.prev_pos = pos
+            item.setPos(self.pos)
 
     def end_grab(self):
         self._delete_proxy_items()
@@ -62,23 +66,17 @@ class WorkspaceController:
         self.handle.update()
         self._grab = False
 
-    def start_rot(self, down_pos):
+    def start_rot(self, pos):
         self._create_proxy_items()
-        centroids = [item.job.get_centroid() for item in self.scene.selectedItems()]
-        self.center = np.mean(centroids, axis=0)
+        self.origin = self._selection_centroid()
         for item in self.proxy_items:
-            item.setTransformOriginPoint(self.center[0], self.center[1])
+            item.setTransformOriginPoint(self.origin)
+        direction = Point(pos) - self.origin
+        self.ini_angle = math.atan2(direction[1], direction[0])
 
-        down_pos = np.array([down_pos.x(), down_pos.y()])
-        dir_vect = down_pos - self.center
-        self.down_angle = math.atan2(dir_vect[1], dir_vect[0])
-
-    def step_rot(self, pos, step_mode):
-        pos = np.array([pos.x(), pos.y()])
-        dir_vect = pos - self.center
-        cur_angle = math.atan2(dir_vect[1], dir_vect[0])
-
-        self.angle = cur_angle - self.down_angle
+    def step_rot(self, pos, step_mode=False):
+        direction = Point(pos) - self.origin
+        self.angle = math.atan2(direction[1], direction[0]) - self.ini_angle
         if step_mode:
             incr = math.pi / 12
             self.angle = round(self.angle / incr) * incr
@@ -88,26 +86,21 @@ class WorkspaceController:
     def end_rot(self):
         self._delete_proxy_items()
         for item in self.items:
-            item.job.turn_around(self.center, self.angle)
+            item.job.turn_around(self.origin, self.angle)
         self.items = []
         self.handle.update()
 
-    def start_scale(self, down_pos):
+    def start_scale(self, pos):
         self._create_proxy_items()
-        centroids = [item.job.get_centroid() for item in self.scene.selectedItems()]
-        self.center = np.mean(centroids, axis=0)
+        self.origin = self._selection_centroid()
         for item in self.proxy_items:
-            item.setTransformOriginPoint(self.center[0], self.center[1])
+            item.setTransformOriginPoint(self.origin)
+        self.ini_dist = np.linalg.norm(Point(pos) - self.origin)
+        if math.isclose(self.ini_dist, 0):
+            self.ini_dist = 1
 
-        down_pos = np.array([down_pos.x(), down_pos.y()])
-        self.down_dist = self.prev_dist = np.linalg.norm(down_pos - self.center)
-        if math.isclose(self.down_dist, 0):
-            self.down_dist = 1
-
-    def step_scale(self, pos, step_mode):
-        pos = np.array([pos.x(), pos.y()])
-        dist = np.linalg.norm(pos - self.center)
-        self.scale = dist / self.down_dist
+    def step_scale(self, pos, step_mode=False):
+        self.scale = np.linalg.norm(Point(pos) - self.origin) / self.ini_dist
         if step_mode:
             incr = 0.1
             self.scale = round(self.scale / incr) * incr
@@ -117,7 +110,7 @@ class WorkspaceController:
     def end_scale(self):
         self._delete_proxy_items()
         for item in self.items:
-            item.job.scale_around(self.center, self.scale)
+            item.job.scale_around(self.origin, self.scale)
         self.items = []
         self.handle.update()
 
@@ -145,7 +138,7 @@ class WorkspaceController:
     def keyPressEvent(self, ev):
         if ev.modifiers() == Qt.NoModifier:
             if ev.key() == Qt.Key_Delete:
-                # DEL
+                # Delete
                 self.delete_selection()
             # elif ev.key() == Qt.Key_Escape:
             #     # ESC

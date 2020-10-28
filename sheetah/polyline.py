@@ -144,6 +144,7 @@ class Polyline(PolylineInterface):
         polyline._shapely_up_to_date = False
         polyline._lines_up_to_date = False
         polyline._vertices = np.flip(polyline._vertices, axis=0)
+        polyline._vertices = np.copy(polyline._vertices)
         polyline._vertices[:,2] = -polyline._vertices[:,2]
         if polyline._closed:
             polyline._vertices[:,:2] = np.roll(polyline._vertices[:,:2], 1, axis=0)
@@ -258,13 +259,9 @@ class Polyline(PolylineInterface):
         polyline._vertices = polyline._vertices.transpose()
         return polyline
 
-
     def to_lines(self):
         self._update_lines()
         return self._lines
-
-    # def to_gcode(self):
-    #     pass
 
 def line2polyline(start, end):
     return Polyline(np.insert([start, end], 2, 0., axis=1), False)

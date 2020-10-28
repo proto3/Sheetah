@@ -97,10 +97,11 @@ class WorkspaceView(QtWidgets.QGraphicsView):
 
     def posSyncCheck(self, ev):
         if self.lastScenePosOutdated:
-            moveEvent = QtGui.QMouseEvent(QtCore.QEvent.MouseMove, ev.pos(),
-            QtCore.Qt.NoButton,
-            QtCore.Qt.MouseButtons(QtCore.Qt.NoButton),
-            QtCore.Qt.NoModifier)
+            moveEvent = QtGui.QMouseEvent(
+                            QtCore.QEvent.MouseMove, ev.pos(),
+                            QtCore.Qt.NoButton,
+                            QtCore.Qt.MouseButtons(QtCore.Qt.NoButton),
+                            QtCore.Qt.NoModifier)
             self.mouseMoveEvent(moveEvent)
             self.lastScenePosOutdated = False
 
@@ -123,7 +124,6 @@ class WorkspaceView(QtWidgets.QGraphicsView):
 
     def mousePressEvent(self, ev):
         self.posSyncCheck(ev)
-
         if ev.button() & Qt.MidButton:
             self.prev_pos = ev.pos()
             self.dragging = True
@@ -165,7 +165,8 @@ class WorkspaceView(QtWidgets.QGraphicsView):
             QtWidgets.QGraphicsView.mouseMoveEvent(self, ev)
 
     def resizeEvent(self, ev):
-        # create new rect of center self.sceneRect().center() and of size self.rect() in scene units
+        # create new rect of center self.sceneRect().center() and of size
+        # self.rect() in scene units
         r = QtCore.QRectF(self.rect())
         viewport = self.viewportTransform().inverted()[0].mapRect(r)
         viewport.translate(self.sceneRect().center() - viewport.center())

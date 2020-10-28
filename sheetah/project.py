@@ -19,8 +19,7 @@ class Project(QObject):
             print('Unable to load ' + filename + ', ' + str(e))
 
     def remove_jobs(self, jobs):
-        unwanted_jobs = set(jobs)
-        self.jobs = [j for j in self.jobs if j not in unwanted_jobs]
+        self.jobs = [j for j in self.jobs if j not in jobs]
         self.job_update.emit()
 
     def generate_tasks(self, post_processor, dry_run):
@@ -30,8 +29,4 @@ class Project(QObject):
                 tasks.append(post_processor.generate(job, i, dry_run))
         if tasks:
             tasks.insert(0, post_processor.init_task())
-
-        # for t in tasks:
-        #     for i in t.cmd_list:
-        #         print(i)
         return tasks

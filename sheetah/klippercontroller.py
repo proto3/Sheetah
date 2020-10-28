@@ -156,6 +156,7 @@ class THCWidget(pg.PlotWidget):
         self.thc_logger = thc_logger
         self.showGrid(True, True, 0.5)
         self.setRange(yRange=(0, 200), disableAutoRange=True)
+        self.hideButtons()
 
         self.z_pos_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(87, 200, 34), width=2))
         self.arc_v_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(255, 87, 34), width=2))
