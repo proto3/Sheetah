@@ -12,7 +12,7 @@ class PostProcessor:
     def init_task(self):
         return Task(self._init_seq)
 
-    def abort_task(self):
+    def emergency_task(self):
         return Task(self._abort_seq)
 
     def generate(self, job, task_id, dry_run=False):

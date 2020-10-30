@@ -31,8 +31,11 @@ def decimate(points, tol):
 
 class Task():
     def __init__(self, cmd_list):
+        if not cmd_list:
+            raise Exception('Cannot create empty task.')
         self.cmd_list = cmd_list
         self.cmd_index = 0
+        self.failed = False
 
     def __str__(self):
         return str(self.cmd_list)
@@ -42,28 +45,32 @@ class Task():
         self.cmd_index += 1
         return cmd
 
+    def fail(self):
+        self.failed = True
+        self.close()
+
     def close(self):
         self.cmd_list = []
 
 class JobTask(Task):
-    def __init__(self, cmd_list, job, id, dry_run):
+    def __init__(self, cmd_list, job, task_id, dry_run):
         super().__init__(cmd_list)
         self.job = job
-        self.id = id
+        self.task_id = task_id
         self.dry_run = dry_run
 
     def pop(self):
         if not self.dry_run and self.cmd_index == 0:
-            self.job.set_cut_state(self.id, Job.RUNNING)
+            self.job.set_cut_state(self.task_id, Job.RUNNING)
         return super().pop()
 
     def close(self):
-        if not self.dry_run:
-            if self.cmd_index >= len(self.cmd_list):
-                self.job.set_cut_state(self.id, Job.DONE)
-            else:
-                self.job.set_cut_state(self.id, Job.FAILED)
         super().close()
+        if not self.dry_run:
+            if self.failed:
+                self.job.set_cut_state(self.task_id, Job.FAILED)
+            else:
+                self.job.set_cut_state(self.task_id, Job.DONE)
 
 class PipelineNode:
     def __init__(self, fun, parent):

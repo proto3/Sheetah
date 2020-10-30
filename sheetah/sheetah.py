@@ -48,7 +48,6 @@ if __name__ == '__main__':
     post_processor = PostProcessor()
     controller = KlipperController(project, post_processor)
     controller_ui = KlipperControllerUI(controller)
-    controller.connect('/tmp/printer')
 
     main_window = MainWindow(ws_view,
                              ws_controller,
