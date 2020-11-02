@@ -9,7 +9,7 @@ class VideoThread(QtCore.QThread):
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
         cap.set(cv2.CAP_PROP_FPS, 5)
         counter = -1
-        while True:
+        while cap.isOpened():
             ret, frame = cap.read()
             counter = (counter + 1)%(5./0.2)
             if ret and not counter:
@@ -40,3 +40,4 @@ class VideoThread(QtCore.QThread):
                 self.frame = frame
 
                 self.frame_available.emit()
+        cap.release()
