@@ -36,7 +36,6 @@ if __name__ == '__main__':
 
     app.setStyleSheet(open('style/darkorange.stylesheet').read())
 
-    pg.setConfigOption('antialias', True)
     pg.setConfigOption('background', 0.1)
     pg.setConfigOption('foreground', 'w')
 

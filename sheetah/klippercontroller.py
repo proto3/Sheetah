@@ -13,6 +13,7 @@ class QTHCLogger(QtCore.QObject):
     def __init__(self):
         super().__init__()
         self.thc_data = np.zeros((1000, 3))
+
     def log_thc_data(self, z_pos, arc_v, speed):
         self.thc_data[:-1] = self.thc_data[1:]
         self.thc_data[-1] = np.array([z_pos, arc_v, speed])
@@ -57,11 +58,15 @@ class KlipperController(ControllerBase):
         self._abort_internal(input)
 
     def _process_thc(self, input):
-        words = input.split()
-        z_pos = float(words[3])
-        arc_v = float(words[4])
-        speed = float(words[5])
-        self.thc_logger.log_thc_data(z_pos, arc_v, speed)
+        try:
+            words = input.split()
+            z_pos = float(words[3])
+            arc_v = float(words[4])
+            speed = float(words[5])
+        except:
+            pass
+        else:
+            self.thc_logger.log_thc_data(z_pos, arc_v, speed)
 
 class THCWidget(pg.PlotWidget):
     def __init__(self, thc_logger):
@@ -71,9 +76,9 @@ class THCWidget(pg.PlotWidget):
         self.setRange(yRange=(0, 200), disableAutoRange=True)
         self.hideButtons()
 
-        self.z_pos_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(87, 200, 34), width=2))
-        self.arc_v_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(255, 87, 34), width=2))
-        self.speed_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(34, 120, 255), width=2))
+        self.z_pos_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(87, 200, 34), width=1))
+        self.arc_v_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(255, 87, 34), width=1))
+        self.speed_curve = pg.PlotCurveItem([], [], pen=pg.mkPen(color=(34, 120, 255), width=1))
         self.on_thc_data()
         self.addItem(self.z_pos_curve)
         self.addItem(self.arc_v_curve)
