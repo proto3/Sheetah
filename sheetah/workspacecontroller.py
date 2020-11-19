@@ -54,7 +54,7 @@ class WorkspaceController:
         self.pos = Point(pos) - self.ini_pos
         if step_mode:
             incr = 10
-            self.pos = np.round(self.pos / incr) * incr
+            self.pos = Point(np.round(self.pos / incr) * incr)
         for item in self.proxy_items:
             item.setPos(self.pos)
 

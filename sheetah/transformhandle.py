@@ -1,13 +1,14 @@
 from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtCore import Qt
 
-class RotateHandle(QtWidgets.QGraphicsEllipseItem):
-    def __init__(self, parent, controller):
-        super().__init__(-5,-5,10,10, parent)
+class HandleIcon(QtWidgets.QGraphicsPixmapItem):
+    def __init__(self, img_path, parent, controller):
+        super().__init__(QtGui.QPixmap(img_path), parent)
+        self.setOffset(-self.pixmap().rect().center())
+        self.setFlag(QtWidgets.QGraphicsItem.ItemIgnoresTransformations)
         self.controller = controller
-        self.setPen(QtGui.QPen(Qt.NoPen))
-        self.setBrush(QtGui.QBrush(QtGui.QColor(50,180,255)))
 
+class RotateHandle(HandleIcon):
     def mousePressEvent(self, ev):
         if ev.button() & Qt.LeftButton:
             self.controller.start_rot(ev.scenePos())
@@ -23,22 +24,7 @@ class RotateHandle(QtWidgets.QGraphicsEllipseItem):
                                  bool(ev.modifiers() & Qt.ControlModifier))
         ev.accept()
 
-class ScaleHandle(QtWidgets.QGraphicsRectItem):
-    def __init__(self, parent, controller):
-        super().__init__(-5,-5,10,10, parent)
-        self.controller = controller
-        self.setPen(QtGui.QPen(Qt.NoPen))
-        self.setBrush(QtGui.QBrush(QtGui.QColor(255,150,0)))
-        self.setAcceptHoverEvents(True)
-
-    def hoverEnterEvent(self, ev):
-        #TODO change cursor
-        pass
-
-    def hoverLeaveEvent(self, ev):
-        #TODO change cursor
-        pass
-
+class ScaleHandle(HandleIcon):
     def mousePressEvent(self, ev):
         if ev.button() & Qt.LeftButton:
             self.controller.start_scale(ev.scenePos())
@@ -62,8 +48,8 @@ class TransformHandle(QtWidgets.QGraphicsRectItem):
         pen.setCosmetic(True)
         self.setPen(pen)
         self.setZValue(2)
-        self.rotate = RotateHandle(self, controller)
-        self.scale = ScaleHandle(self, controller)
+        self.rotate = RotateHandle('resources/rotate_icon.png', self, controller)
+        self.scale = ScaleHandle('resources/scale_icon.png', self, controller)
         self.hide()
 
     def update(self):
