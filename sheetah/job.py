@@ -4,31 +4,6 @@ from PyQt5 import QtCore
 import numpy as np
 import math
 
-def dist_abc(points):
-    a = points[:,:-2]  # left
-    b = points[:,2:]   # right
-    c = points[:,1:-1] # mid
-    ab = b-a
-    ca = a-c
-    dist = np.abs(np.cross(ab, ca, axis=0)) / np.linalg.norm(ab, axis=0)
-    return np.hstack((np.inf, dist, np.inf))
-
-def decimate(points, tol):
-    accu = np.zeros(points.shape[1])
-    dist = dist_abc(points)
-    while True:
-        i = np.argmin(dist)
-        if dist[i] + accu[i] < tol:
-            accu[i-1] += dist[i]
-            accu[i+1] += dist[i]
-            accu = np.delete(accu, i)
-            points = np.delete(points, i, axis=1)
-            dist = np.delete(dist, i)
-            dist[i-1:i+1] = dist_abc(points[:,i-2:i+2])[1:3]
-        else:
-            break
-    return points
-
 class Task():
     def __init__(self, cmd_list):
         if not cmd_list:

@@ -10,32 +10,38 @@ from geomdl import BSpline
 from geomdl import utilities
 from polylineinterface import PolylineInterface
 
-from cavaliercontours import CAVCPolyline
+import cavaliercontours as cavc
 
 from shapely.geometry.polygon import Polygon, LineString
 
 class Polyline(PolylineInterface):
     def __init__(self, vertices, closed):
-        vertices = np.array(vertices)
+        vertices = np.array(vertices) # NOTE this create a copy
+        if vertices.size > 0:
+            assert(len(vertices.shape) == 2)
+            assert(vertices.shape[0] == 3)
+            # remove duplicates
+            dup = np.all(np.isclose(vertices[:2,:-1], vertices[:2,1:]), axis=0)
+            dup = np.append(dup, False)
+            vertices = vertices[:,~dup]
+        else:
+            # ensure shape is correct
+            vertices = np.empty(shape=(3,0))
+        Polyline._init_internal(vertices, closed, self)
 
-        # delete zero length lines
-        dup = np.all(np.isclose(vertices[:2,:-1], vertices[:2,1:]), axis=0)
-        dup = np.append(dup, False)
-        self._vertices = vertices[:,~dup]
-
-        if self._vertices.size > 0:
-            assert(len(self._vertices.shape) == 2)
-            assert(self._vertices.shape[0] == 3)
-
-        self._closed = closed
-
-        self._cavc_up_to_date = False
-        self._shapely_up_to_date = False
-        self._lines_up_to_date = False
+    def _init_internal(vertices, closed, object=None):
+        if object is None:
+            object = Polyline.__new__(Polyline)
+        object._vertices = vertices
+        object._closed = closed
+        object._cavc_up_to_date = False
+        object._shapely_up_to_date = False
+        object._lines_up_to_date = False
+        return object
 
     def _update_cavc(self):
         if not self._cavc_up_to_date:
-            self._cavc_pline = CAVCPolyline(self._vertices.T, self._closed)
+            self._cavc_pline = cavc.Polyline(self._vertices, self._closed)
             self._cavc_up_to_date = True
 
     def _update_shapely(self):
@@ -116,7 +122,8 @@ class Polyline(PolylineInterface):
     @property
     def bounds(self):
         self._update_cavc()
-        return self._cavc_pline.get_extents()
+        min_x, min_y, max_x, max_y = self._cavc_pline.get_extents()
+        return np.array([[min_x, min_y], [max_x, max_y]])
 
     @property
     def centroid(self):
@@ -135,13 +142,9 @@ class Polyline(PolylineInterface):
         return True
 
     def reverse(self):
-        polyline = copy(self)
-        polyline._cavc_pline = None
-        polyline._cavc_up_to_date = False
-        polyline._shapely_up_to_date = False
-        polyline._lines_up_to_date = False
+        polyline = Polyline._init_internal(np.copy(self._vertices),
+                                           self._closed)
         polyline._vertices = np.flip(polyline._vertices, axis=1)
-        polyline._vertices = np.copy(polyline._vertices)
         polyline._vertices[2] = -polyline._vertices[2]
         if polyline._closed:
             polyline._vertices[:2] = np.roll(polyline._vertices[:2], 1, axis=1)
@@ -170,47 +173,34 @@ class Polyline(PolylineInterface):
         return self._shapely.intersects(polyline._shapely)
 
     def affine(self, d, r, s):
-        polyline = copy(self)
-        polyline._cavc_pline = None
-        polyline._cavc_up_to_date = False
-        polyline._shapely_up_to_date = False
-        polyline._lines_up_to_date = False
+        polyline = Polyline._init_internal(np.copy(self._vertices),
+                                           self._closed)
         cos = math.cos(r) * s
         sin = math.sin(r)
         tr_mat = np.array([[cos,-sin, d[0]],
                            [sin, cos, d[1]],
                            [  0,   0,    1]])
-        vert = polyline._vertices[:-1]
-        vert = np.dot(tr_mat, np.insert(vert, 2, 1., axis=0))
-        vert[-1] = polyline._vertices[-1]
-        polyline._vertices = vert
-
+        vertices = polyline._vertices[:-1]
+        vertices = np.dot(tr_mat, np.insert(vertices, 2, 1., axis=0))
+        vertices[-1] = polyline._vertices[-1]
+        polyline._vertices = vertices
         return polyline
 
     def offset(self, offset):
         self._update_cavc()
         cavc_plines = self._cavc_pline.parallel_offset(offset, 0)
         polylines = []
-        for cp in cavc_plines:
-            polyline = copy(self)
-            polyline._cavc_pline = cp
+        for cavc_pline in cavc_plines:
+            polyline = Polyline._init_internal(cavc_pline.vertex_data(),
+                                               cavc_pline.is_closed())
+            polyline._cavc_pline = cavc_pline
             polyline._cavc_up_to_date = True
-            polyline._shapely_up_to_date = False
-            polyline._lines_up_to_date = False
-            polyline._vertices = cp.vertex_data().T
-            polyline._closed = cp.is_closed()
             polylines.append(polyline)
         return polylines
 
     def loop(self, limit_angle, selected_radius, loop_radius):
-        polyline = copy(self)
-        polyline._cavc_pline = None
-        polyline._cavc_up_to_date = False
-        polyline._shapely_up_to_date = False
-        polyline._lines_up_to_date = False
-
-        #TODO prepare for later representation
-        polyline._vertices = np.copy(polyline._vertices)
+        polyline = Polyline._init_internal(np.copy(self._vertices),
+                                           self._closed)
 
         limit_bulge = math.tan((math.pi - limit_angle) / 4)
         ids = np.where(np.abs(polyline._vertices[2]) >= limit_bulge)[0]
