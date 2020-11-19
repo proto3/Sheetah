@@ -31,11 +31,11 @@ class PostProcessor:
 
         data = cut_pline.raw
         points = []
-        n = data.shape[0]
+        n = data.shape[1]
         for i in range(n - int(not cut_pline.is_closed())):
-            a = data[i,:2]
-            b = data[(i+1)%n,:2]
-            bulge = data[i,2]
+            a = data[:2,i]
+            b = data[:2,(i+1)%n]
+            bulge = data[2,i]
             if points:
                 points.pop(-1)
 

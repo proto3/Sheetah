@@ -17,12 +17,12 @@ def _load_polylines_dxf(filepath):
             polyline = pl.line2polyline(e.dxf.start[:2], e.dxf.end[:2])
         elif e.dxftype() == 'ARC':
             polyline = pl.arc2polyline(e.dxf.center, e.dxf.radius,
-                                    radians(e.dxf.start_angle),
-                                    radians(e.dxf.end_angle))
+                                       radians(e.dxf.start_angle),
+                                       radians(e.dxf.end_angle))
         elif e.dxftype() == 'CIRCLE':
             polyline = pl.circle2polyline(e.dxf.center, e.dxf.radius)
         elif e.dxftype() == 'LWPOLYLINE':
-            vertices = np.delete(np.array(e.get_points()), [2,3], axis=1)
+            vertices = np.array(e.get_points()).transpose()[[0,1,4]]
             polyline = pl.Polyline(vertices, e.closed)
         elif e.dxftype() == 'SPLINE':
             polyline = pl.spline2polyline(e.dxf.degree,

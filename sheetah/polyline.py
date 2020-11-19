@@ -16,16 +16,16 @@ from shapely.geometry.polygon import Polygon, LineString
 
 class Polyline(PolylineInterface):
     def __init__(self, vertices, closed):
-        self._vertices = np.array(vertices)
+        vertices = np.array(vertices)
 
         # delete zero length lines
-        dup = np.all(np.isclose(self._vertices[:-1,:2], self._vertices[1:,:2]), axis=1)
+        dup = np.all(np.isclose(vertices[:2,:-1], vertices[:2,1:]), axis=0)
         dup = np.append(dup, False)
-        self._vertices = self._vertices[~dup,:]
+        self._vertices = vertices[:,~dup]
 
         if self._vertices.size > 0:
             assert(len(self._vertices.shape) == 2)
-            assert(self._vertices.shape[1] == 3)
+            assert(self._vertices.shape[0] == 3)
 
         self._closed = closed
 
@@ -34,20 +34,17 @@ class Polyline(PolylineInterface):
         self._lines_up_to_date = False
 
     def _update_cavc(self):
-        if self._cavc_up_to_date:
-            return
-        self._cavc_pline = CAVCPolyline(self._vertices, self._closed)
-        self._cavc_up_to_date = True
+        if not self._cavc_up_to_date:
+            self._cavc_pline = CAVCPolyline(self._vertices.T, self._closed)
+            self._cavc_up_to_date = True
 
     def _update_shapely(self):
-        # TODO remove np transpose cleanly
-        if self._shapely_up_to_date:
-            return
-        if self.is_closed():
-            self._shapely = Polygon(np.transpose(self.to_lines()))
-        else:
-            self._shapely = LineString(np.transpose(self.to_lines()))
-        self._shapely_up_to_date = True
+        if not self._shapely_up_to_date:
+            if self.is_closed():
+                self._shapely = Polygon(self.to_lines().T)
+            else:
+                self._shapely = LineString(self.to_lines().T)
+            self._shapely_up_to_date = True
 
     def _update_lines(self):
         if self._lines_up_to_date:
@@ -55,11 +52,11 @@ class Polyline(PolylineInterface):
 
         precision = 1e-3
         points = []
-        n = self._vertices.shape[0]
+        n = self._vertices.shape[1]
         for i in range(n - int(not self._closed)):
-            a = self._vertices[i,:2]
-            b = self._vertices[(i+1)%n,:2]
-            bulge = self._vertices[i,2]
+            a = self._vertices[:2,i]
+            b = self._vertices[:2,(i+1)%n]
+            bulge = self._vertices[2,i]
             if points:
                 points.pop(-1)
             if math.isclose(bulge, 0):
@@ -110,11 +107,11 @@ class Polyline(PolylineInterface):
 
     @property
     def start(self):
-        return self._vertices[0][:2]
+        return self._vertices[:2,0]
 
     @property
     def end(self):
-        return self._vertices[-1][:2]
+        return self._vertices[:2,-1]
 
     @property
     def bounds(self):
@@ -143,16 +140,15 @@ class Polyline(PolylineInterface):
         polyline._cavc_up_to_date = False
         polyline._shapely_up_to_date = False
         polyline._lines_up_to_date = False
-        polyline._vertices = np.flip(polyline._vertices, axis=0)
+        polyline._vertices = np.flip(polyline._vertices, axis=1)
         polyline._vertices = np.copy(polyline._vertices)
-        polyline._vertices[:,2] = -polyline._vertices[:,2]
+        polyline._vertices[2] = -polyline._vertices[2]
         if polyline._closed:
-            polyline._vertices[:,:2] = np.roll(polyline._vertices[:,:2], 1, axis=0)
+            polyline._vertices[:2] = np.roll(polyline._vertices[:2], 1, axis=1)
         else:
-            polyline._vertices[:,2] = np.roll(polyline._vertices[:,2], -1, axis=0)
-            polyline._vertices[-1,2] = 0.
+            polyline._vertices[2] = np.roll(polyline._vertices[2], -1)
+            polyline._vertices[2,-1] = 0.
         return polyline
-
 
     def contains(self, object):
         if not self._closed:
@@ -184,11 +180,10 @@ class Polyline(PolylineInterface):
         tr_mat = np.array([[cos,-sin, d[0]],
                            [sin, cos, d[1]],
                            [  0,   0,    1]])
-        polyline._vertices = polyline._vertices.transpose()
         vert = polyline._vertices[:-1]
         vert = np.dot(tr_mat, np.insert(vert, 2, 1., axis=0))
         vert[-1] = polyline._vertices[-1]
-        polyline._vertices = vert.T
+        polyline._vertices = vert
 
         return polyline
 
@@ -202,7 +197,7 @@ class Polyline(PolylineInterface):
             polyline._cavc_up_to_date = True
             polyline._shapely_up_to_date = False
             polyline._lines_up_to_date = False
-            polyline._vertices = cp.vertex_data()
+            polyline._vertices = cp.vertex_data().T
             polyline._closed = cp.is_closed()
             polylines.append(polyline)
         return polylines
@@ -214,8 +209,8 @@ class Polyline(PolylineInterface):
         polyline._shapely_up_to_date = False
         polyline._lines_up_to_date = False
 
-        # prepare for later representation
-        polyline._vertices = np.copy(polyline._vertices.transpose())
+        #TODO prepare for later representation
+        polyline._vertices = np.copy(polyline._vertices)
 
         limit_bulge = math.tan((math.pi - limit_angle) / 4)
         ids = np.where(np.abs(polyline._vertices[2]) >= limit_bulge)[0]
@@ -256,7 +251,6 @@ class Polyline(PolylineInterface):
             polyline._vertices = np.insert(polyline._vertices, id+1, new_b[:,i], axis=1)
             polyline._vertices = np.insert(polyline._vertices, id+1, new_a[:,i], axis=1)
 
-        polyline._vertices = polyline._vertices.transpose()
         return polyline
 
     def to_lines(self):
@@ -264,23 +258,25 @@ class Polyline(PolylineInterface):
         return self._lines
 
 def line2polyline(start, end):
-    return Polyline(np.insert([start, end], 2, 0., axis=1), False)
+    return Polyline(np.insert([start, end], 2, 0., axis=1).T, False)
 
 def arc2polyline(center, radius, rad_start, rad_end):
     #TODO numpify
     bulge = math.tan(math.fmod(rad_end - rad_start + 2*math.pi, 2*math.pi) / 4)
     # bulge = tan(remainder(end - start, 2*pi) / 4)
     vertices = [[center[0] + radius * math.cos(rad_start),
-                 center[1] + radius * math.sin(rad_start), bulge],
-                [center[0] + radius * math.cos(rad_end),
-                 center[1] + radius * math.sin(rad_end), 0]]
+                 center[0] + radius * math.cos(rad_end)],
+                [center[1] + radius * math.sin(rad_start),
+                 center[1] + radius * math.sin(rad_end)],
+                [bulge, 0.]]
     return Polyline(vertices, False) # TODO sure not closed ?
 
 def circle2polyline(center, radius):
     #TODO numpify
     # use two bulges to draw a circle
-    vertices = [[center[0] + radius, center[1], 1],
-                [center[0] - radius, center[1], 1]]
+    vertices = [[center[0] + radius, center[0] - radius],
+                [center[1], center[1]],
+                [1. , 1.]]
     return Polyline(vertices, True)
 
 # TODO replace with biarc
@@ -318,10 +314,9 @@ def spline2polyline(degree, control_points, closed):
             curve_data = np.insert(curve_data, i, [t_mid, c[0], c[1]], axis=1)
         else:
             i += 1
-    curve_data = np.transpose(curve_data[1:])
-    vertices = np.insert(curve_data, 2, 0., axis=1)
+    vertices = np.insert(curve_data[1:], 2, 0., axis=0)
     if closed:
-        return Polyline(vertices[:-1], True)
+        return Polyline(vertices[:,:-1], True)
     else:
         return Polyline(vertices, False)
 
@@ -433,11 +428,11 @@ def aggregate(polylines):
                     current.mark()
                     current = current.next
                 if len(parts) > 1:
-                    vertices = np.vstack([p._vertices[:-1] for p in parts[:-1]])
-                    vertices = np.vstack((vertices, parts[-1]._vertices))
-                    if np.allclose(vertices[0,:2], vertices[-1, :2], atol=1e-3):
+                    vertices = np.hstack([p._vertices[:,:-1] for p in parts[:-1]])
+                    vertices = np.hstack((vertices, parts[-1]._vertices))
+                    if np.allclose(vertices[:2,0], vertices[:2,-1], atol=1e-3):
                         closed = True
-                        vertices = np.delete(vertices, -1, axis=0)
+                        vertices = np.delete(vertices, -1, axis=1)
                     else:
                         closed = False
                     ready_polylines.append(Polyline(vertices, closed))
