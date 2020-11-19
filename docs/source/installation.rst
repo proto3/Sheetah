@@ -1,7 +1,7 @@
 Sheetah installation
 ====================
 
-Assuming you have Python3 and Pipenv already installed. Start by cloning
+Assuming you have Python3 and Virtualenv already installed. Start by cloning
 Sheetah's repository.
 
 .. prompt:: bash $
@@ -9,24 +9,24 @@ Sheetah's repository.
     git clone git@github.com:proto3/Sheetah.git
     cd Sheetah
 
-Now create a virtual environment with Pipenv. It will automatically get the
-packages listed in Pipfile and Pipfile.lock
+Now create a virtual environment with virtualenv, activate it and install
+packages listed in requirements.txt.
 
 .. prompt:: bash $
 
-    pipenv install
+    virtualenv -p python3 env       # create
+    source env/bin/activate         # activate
+    pip install -r requirements.txt # initialize
 
-You can now use the following commands to activate the environment and run
-Sheetah.
+You can now run Sheetah.
 
 .. prompt:: bash $
 
-    pipenv shell
     cd sheetah
     ./sheetah.py
 
-Once you're done you can deactivate your pipenv like this.
+Once you're done you can deactivate your virtualenv like this.
 
 .. prompt:: bash $
 
-    exit
+    deactivate
